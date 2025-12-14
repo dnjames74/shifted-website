@@ -1,0 +1,69 @@
+[00:00:01.983] Server  LOG      ✓ Ready in 1301ms
+[00:00:15.609] Server  ERROR    ⨯ ./app/layout.tsx:1:1
+Module not found: Can't resolve './globals.css'
+> 1 | import "./globals.css";
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+  2 |
+  3 | export const metadata = {
+  4 |   title: "Shifted Dating",
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:00:15.912] Server  ERROR    ⨯ ./app/layout.tsx:1:1
+Module not found: Can't resolve './globals.css'
+> 1 | import "./globals.css";
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+  2 |
+  3 | export const metadata = {
+  4 |   title: "Shifted Dating",
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:00:18.059] Browser ERROR   uncaughtError: Error: ./app/layout.tsx:1:1
+Module not found: Can't resolve './globals.css'
+> 1 | import "./globals.css";
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+  2 |
+  3 | export const metadata = {
+  4 |   title: "Shifted Dating",
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:00:18.351] Browser ERROR   ./app/layout.tsx:1:1
+Module not found: Can't resolve './globals.css'
+> 1 | import "./globals.css";
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+  2 |
+  3 | export const metadata = {
+  4 |   title: "Shifted Dating",
+
+https://nextjs.org/docs/messages/module-not-found
+[00:00:18.351] Browser ERROR   ./app/layout.tsx:1:1
+Module not found: Can't resolve './globals.css'
+> 1 | import "./globals.css";
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+  2 |
+  3 | export const metadata = {
+  4 |   title: "Shifted Dating",
+
+https://nextjs.org/docs/messages/module-not-found
+[00:00:18.549] Browser ERROR   ./app/layout.tsx:1:1
+Module not found: Can't resolve './globals.css'
+> 1 | import "./globals.css";
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+  2 |
+  3 | export const metadata = {
+  4 |   title: "Shifted Dating",
+
+https://nextjs.org/docs/messages/module-not-found
+[00:00:49.339] Server  LOG      ✓ Compiled in 51ms
+[00:00:50.595] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
