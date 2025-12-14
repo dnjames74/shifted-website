@@ -10,7 +10,7 @@ out/
 !.env.example
 
 # Vercel
-.vercel/
+.vercel
 
 # logs
 npm-debug.log*
