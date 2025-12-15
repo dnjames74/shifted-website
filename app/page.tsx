@@ -60,6 +60,14 @@ export default function Page() {
             </a>
           </p>
         </div>
+          <p style={{ marginTop: 10, color: "#6b7280", fontSize: 12, textAlign: "center" }}>
+  <a href="/privacy" style={{ color: "#9ca3af", marginRight: 12 }}>
+    Privacy Policy
+  </a>
+  <a href="/terms" style={{ color: "#9ca3af" }}>
+    Terms of Service
+  </a>
+</p>
 
         <p style={{ marginTop: 14, color: "#6b7280", fontSize: 12, textAlign: "center" }}>
           © {year} Shifted Dating
