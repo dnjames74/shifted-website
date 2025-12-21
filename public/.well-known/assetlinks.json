@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.shifteddating.app",
+       "sha256_cert_fingerprints": [
+        "83:22:A7:0C:D7:7C:6A:17:79:B8:85:51:74:50:7A:69:8E:4E:5D:56:CA:72:6F:96:BD:13:21:2C:03:D1:AD:76"
+      ]
+    }
+  }
+]

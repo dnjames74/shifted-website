@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "W4XCD9N869.com.shifteddating.app",
+        "paths": [ "/auth/callback", "/auth/callback/*" ]
+      }
+    ]
+  }
+}
