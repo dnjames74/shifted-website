@@ -1,123 +1,143 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 
-function getEnv(name: string) {
-  const v = process.env[name];
-  return typeof v === "string" ? v : "";
+function parseHashParams(hash: string) {
+  // hash looks like: "#access_token=...&refresh_token=...&token_type=bearer&expires_in=..."
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  const params = new URLSearchParams(raw);
+  return {
+    access_token: params.get("access_token"),
+    refresh_token: params.get("refresh_token"),
+    token_type: params.get("token_type"),
+    expires_in: params.get("expires_in"),
+    type: params.get("type"), // sometimes present
+  };
 }
 
 export default function CallbackClient() {
-  const params = useSearchParams();
-  const [message, setMessage] = useState("Finishing sign-in…");
+  const [status, setStatus] = useState<
+    "working" | "success" | "error"
+  >("working");
+  const [message, setMessage] = useState<string>("Signing you in…");
 
-  const supabaseUrl = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const supabaseAnon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   const supabase = useMemo(() => {
-    if (!supabaseUrl || !supabaseAnon) return null;
-    return createClient(supabaseUrl, supabaseAnon, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  }, [supabaseUrl, supabaseAnon]);
+    if (!supabaseUrl || !supabaseAnonKey) return null;
+    return createClient(supabaseUrl, supabaseAnonKey);
+  }, [supabaseUrl, supabaseAnonKey]);
 
   useEffect(() => {
-    const run = async () => {
+    let cancelled = false;
+
+    async function run() {
       try {
-        // Supabase may return either code (PKCE) or tokens
-        const code = params.get("code");
-        const errorDesc = params.get("error_description") || params.get("error");
-
-        if (errorDesc) {
-          setMessage(`Sign-in error: ${errorDesc}`);
-          return;
-        }
-
         if (!supabase) {
-          setMessage("Missing Supabase env vars on the website (Vercel).");
-          return;
+          throw new Error(
+            "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY on Vercel."
+          );
         }
+
+        // Case A: PKCE/code flow
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get("code");
 
         if (code) {
-          setMessage("Exchanging code…");
+          setMessage("Finishing sign-in…");
           const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) {
-            setMessage(`Could not exchange code: ${error.message}`);
-            return;
-          }
+          if (error) throw error;
         } else {
-          // If there is no code, still allow redirect (some flows just want to bounce)
-          setMessage("Redirecting…");
+          // Case B: Hash fragment token flow (your current case)
+          const { access_token, refresh_token } = parseHashParams(
+            window.location.hash || ""
+          );
+
+          if (access_token && refresh_token) {
+            setMessage("Finishing sign-in…");
+            const { error } = await supabase.auth.setSession({
+              access_token,
+              refresh_token,
+            });
+            if (error) throw error;
+          } else {
+            // Nothing to process
+            throw new Error(
+              "No auth code or tokens found in the callback URL."
+            );
+          }
         }
 
-        // IMPORTANT: send user back to the app
-        // Use your app scheme:
-        const appUrl = "shiftedclean://auth/callback";
+        if (cancelled) return;
 
-        // If you want to pass the code through to the app, do this instead:
-        // const appUrl = code ? `shiftedclean://auth/callback?code=${encodeURIComponent(code)}` : "shiftedclean://auth/callback";
+        setStatus("success");
+        setMessage("Signed in. Opening the app…");
 
-        window.location.href = appUrl;
+        // Deep link back into the app
+        const deepLink = "shiftedclean://auth/callback";
+
+        // Give Safari a moment to paint the success state
+        setTimeout(() => {
+          window.location.href = deepLink;
+        }, 250);
+
+        // Optional: fallback if deep link fails (keeps user from being stuck)
+        setTimeout(() => {
+          // If still on the page after a few seconds, show a helpful message
+          if (!cancelled) {
+            setMessage(
+              "If the app didn’t open automatically, tap “Open in Shifted” below."
+            );
+          }
+        }, 3500);
       } catch (e: any) {
-        setMessage(e?.message ?? "Something went wrong.");
+        if (cancelled) return;
+        setStatus("error");
+        setMessage(e?.message ?? "Sign-in failed.");
       }
-    };
+    }
 
     run();
-  }, [params, supabase]);
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   return (
-    <main style={styles.main}>
-      <div style={styles.card}>
-        <div style={styles.spinner} />
-        <h1 style={styles.title}>Signing you in…</h1>
-        <p style={styles.text}>{message}</p>
+    <div style={{ minHeight: "70vh", display: "grid", placeItems: "center" }}>
+      <div style={{ maxWidth: 520, padding: 24, textAlign: "center" }}>
+        <h1 style={{ fontSize: 22, marginBottom: 10 }}>Shifted</h1>
+        <p style={{ opacity: 0.85 }}>{message}</p>
 
-        <p style={{ ...styles.text, marginTop: 14 }}>
-          If nothing happens, open the app and try again.
-        </p>
+        {status !== "working" && (
+          <div style={{ marginTop: 18 }}>
+            <a
+              href="shiftedclean://auth/callback"
+              style={{
+                display: "inline-block",
+                padding: "12px 18px",
+                borderRadius: 999,
+                textDecoration: "none",
+                fontWeight: 700,
+                background: "#22C55E",
+                color: "#051014",
+              }}
+            >
+              Open in Shifted
+            </a>
+          </div>
+        )}
+
+        {status === "error" && (
+          <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
+            Tip: confirm your Supabase redirect URLs include{" "}
+            <code>/auth/callback</code> for both www and non-www, and that Vercel
+            has the correct NEXT_PUBLIC_SUPABASE_* env vars.
+          </p>
+        )}
       </div>
-
-      <style>{`
-        @keyframes spin { 
-          from { transform: rotate(0deg); } 
-          to { transform: rotate(360deg); } 
-        }
-      `}</style>
-    </main>
+    </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  main: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "#000",
-    padding: 24,
-  },
-  card: {
-    width: "100%",
-    maxWidth: 420,
-    borderRadius: 16,
-    border: "1px solid #222",
-    background: "#0b0f1a",
-    padding: 20,
-    color: "#fff",
-    textAlign: "center",
-  },
-  title: { margin: "12px 0 6px", fontSize: 20, fontWeight: 800 },
-  text: { margin: 0, color: "#a3a3a3", fontSize: 14, lineHeight: 1.4 },
-  spinner: {
-    width: 22,
-    height: 22,
-    borderRadius: 999,
-    border: "3px solid #1DB95433",
-    borderTopColor: "#1DB954",
-    margin: "0 auto",
-    animation: "spin 1s linear infinite",
-  },
-};
