@@ -1,7 +1,7 @@
 // app/auth/callback/CallbackClient.tsx
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 
 /**
  * Build a deep link that forwards the Supabase callback payload into the app.
@@ -20,26 +20,25 @@ function buildDeepLink(scheme: string) {
   return `${scheme}://auth/callback${hash}`;
 }
 
-export default function CallbackClient() {
-  const [message] = useState("Tap below to finish signing in and open Shifted.");
+function hasAuthPayload(): boolean {
+  if (typeof window === "undefined") return false;
+  const url = new URL(window.location.href);
+  const code = url.searchParams.get("code");
+  const hash = window.location.hash || "";
+  const hasHashTokens = hash.includes("access_token=") && hash.includes("refresh_token=");
+  return !!code || hasHashTokens;
+}
 
+export default function CallbackClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   const envOk = useMemo(() => !!supabaseUrl && !!supabaseAnonKey, [supabaseUrl, supabaseAnonKey]);
 
+  const payloadPresent = useMemo(() => hasAuthPayload(), []);
+
   const openHref =
     typeof window !== "undefined" ? buildDeepLink("shiftedclean") : "shiftedclean://auth/callback";
-
-  // Detect whether this visit actually contains auth payload (email click)
-  const hasPayload = useMemo(() => {
-    if (typeof window === "undefined") return false;
-    const url = new URL(window.location.href);
-    const code = url.searchParams.get("code");
-    const hash = window.location.hash || "";
-    const hasHashTokens = hash.includes("access_token=") && hash.includes("refresh_token=");
-    return !!code || hasHashTokens;
-  }, []);
 
   return (
     <div style={{ minHeight: "70vh", display: "grid", placeItems: "center" }}>
@@ -49,7 +48,8 @@ export default function CallbackClient() {
         {!envOk ? (
           <>
             <p style={{ opacity: 0.85 }}>
-              Missing <code>NEXT_PUBLIC_SUPABASE_URL</code> or <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> on Vercel.
+              Missing <code>NEXT_PUBLIC_SUPABASE_URL</code> or{" "}
+              <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> on Vercel.
             </p>
             <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
               Add them in Vercel → Project → Settings → Environment Variables, then redeploy.
@@ -57,36 +57,49 @@ export default function CallbackClient() {
           </>
         ) : (
           <>
-            <p style={{ opacity: 0.85 }}>{message}</p>
-
-            {!hasPayload && (
-              <p style={{ marginTop: 12, opacity: 0.7, fontSize: 13 }}>
-                Note: This page is normally opened from your confirmation email link. If you’re here manually,
-                you won’t have tokens/code in the URL—and that’s okay.
-              </p>
+            {payloadPresent ? (
+              <p style={{ opacity: 0.85 }}>Tap below to finish signing in and open Shifted.</p>
+            ) : (
+              <>
+                <p style={{ opacity: 0.85 }}>This page is used during email confirmation.</p>
+                <p style={{ marginTop: 10, opacity: 0.7, fontSize: 13 }}>
+                  If you opened this manually, there won’t be any sign-in code/tokens in the URL — that’s normal.
+                  Please use the link from your confirmation email.
+                </p>
+              </>
             )}
 
             <div style={{ marginTop: 18 }}>
               <a
-                href={openHref}
+                href={payloadPresent ? openHref : "#"}
+                onClick={(e) => {
+                  if (!payloadPresent) e.preventDefault();
+                }}
                 style={{
                   display: "inline-block",
                   padding: "12px 18px",
                   borderRadius: 999,
                   textDecoration: "none",
                   fontWeight: 700,
-                  background: "#22C55E",
-                  color: "#051014",
+                  background: payloadPresent ? "#22C55E" : "#334155",
+                  color: payloadPresent ? "#051014" : "#cbd5e1",
+                  cursor: payloadPresent ? "pointer" : "not-allowed",
                 }}
               >
                 Open in Shifted
               </a>
             </div>
 
-            <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
-              If nothing happens, make sure the Shifted dev build is installed and your scheme is{" "}
-              <code>shiftedclean</code>.
-            </p>
+            {payloadPresent ? (
+              <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
+                If nothing happens, confirm the Shifted dev build is installed and your scheme is{" "}
+                <code>shiftedclean</code>.
+              </p>
+            ) : (
+              <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
+                Tip: try signing up again and click the confirmation email link from your phone.
+              </p>
+            )}
           </>
         )}
       </div>
