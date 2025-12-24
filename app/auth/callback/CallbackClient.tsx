@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-function parseHashParams(hash: string) {
+function getTokensFromHash(hash: string) {
   const raw = hash.startsWith("#") ? hash.slice(1) : hash;
   const params = new URLSearchParams(raw);
   return {
@@ -16,6 +16,7 @@ function parseHashParams(hash: string) {
 export default function CallbackClient() {
   const [status, setStatus] = useState<"working" | "success" | "error">("working");
   const [message, setMessage] = useState("Signing you in…");
+  const [openHref, setOpenHref] = useState<string>("shiftedclean://auth/callback");
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -41,9 +42,6 @@ export default function CallbackClient() {
         let refresh_token: string | null = null;
 
         if (code) {
-          // ✅ PKCE email-confirm flow:
-          // Exchange code -> session in the browser (where PKCE verifier lives),
-          // then forward TOKENS into the app.
           setMessage("Finishing sign-in…");
           const { data, error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) throw error;
@@ -55,8 +53,8 @@ export default function CallbackClient() {
             throw new Error("Could not retrieve session tokens after code exchange.");
           }
         } else {
-          // ✅ Implicit hash token flow (older):
-          const parsed = parseHashParams(window.location.hash || "");
+          // fallback if supabase ever uses implicit fragment flow
+          const parsed = getTokensFromHash(window.location.hash || "");
           access_token = parsed.access_token;
           refresh_token = parsed.refresh_token;
 
@@ -67,13 +65,15 @@ export default function CallbackClient() {
 
         if (cancelled) return;
 
+        // ✅ IMPORTANT: tokens in QUERY (more reliable than #fragment on iOS)
+        const deepLink =
+          `shiftedclean://auth/callback` +
+          `?access_token=${encodeURIComponent(access_token)}` +
+          `&refresh_token=${encodeURIComponent(refresh_token)}`;
+
+        setOpenHref(deepLink);
         setStatus("success");
         setMessage("Signed in. Opening the app…");
-
-        // ✅ IMPORTANT: send tokens into the app, NOT the code
-        const deepLink = `shiftedclean://auth/callback#access_token=${encodeURIComponent(
-          access_token
-        )}&refresh_token=${encodeURIComponent(refresh_token)}`;
 
         setTimeout(() => {
           window.location.href = deepLink;
@@ -106,7 +106,7 @@ export default function CallbackClient() {
         {status !== "working" && (
           <div style={{ marginTop: 18 }}>
             <a
-              href="shiftedclean://auth/callback"
+              href={openHref}
               style={{
                 display: "inline-block",
                 padding: "12px 18px",
