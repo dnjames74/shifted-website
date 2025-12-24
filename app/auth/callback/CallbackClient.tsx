@@ -1,106 +1,125 @@
 // app/auth/callback/CallbackClient.tsx
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 
-/**
- * Build a deep link that forwards the Supabase callback payload into the app.
- * - If we have ?code=... (PKCE), pass it through
- * - Otherwise pass through the entire #access_token=... fragment (implicit flow)
- */
-function buildDeepLink(scheme: string) {
-  const url = new URL(window.location.href);
-  const code = url.searchParams.get("code");
-  const hash = window.location.hash || "";
-
-  if (code) {
-    return `${scheme}://auth/callback?code=${encodeURIComponent(code)}`;
-  }
-
-  return `${scheme}://auth/callback${hash}`;
-}
-
-function hasAuthPayload(): boolean {
-  if (typeof window === "undefined") return false;
-  const url = new URL(window.location.href);
-  const code = url.searchParams.get("code");
-  const hash = window.location.hash || "";
-  const hasHashTokens = hash.includes("access_token=") && hash.includes("refresh_token=");
-  return !!code || hasHashTokens;
+function parseHashParams(hash: string) {
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  const params = new URLSearchParams(raw);
+  return {
+    access_token: params.get("access_token"),
+    refresh_token: params.get("refresh_token"),
+  };
 }
 
 export default function CallbackClient() {
+  const [status, setStatus] = useState<"working" | "success" | "error">("working");
+  const [message, setMessage] = useState("Signing you in…");
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  const envOk = useMemo(() => !!supabaseUrl && !!supabaseAnonKey, [supabaseUrl, supabaseAnonKey]);
+  const supabase = useMemo(() => {
+    if (!supabaseUrl || !supabaseAnonKey) return null;
+    return createClient(supabaseUrl, supabaseAnonKey);
+  }, [supabaseUrl, supabaseAnonKey]);
 
-  const payloadPresent = useMemo(() => hasAuthPayload(), []);
+  useEffect(() => {
+    let cancelled = false;
 
-  const openHref =
-    typeof window !== "undefined" ? buildDeepLink("shiftedclean") : "shiftedclean://auth/callback";
+    async function run() {
+      try {
+        if (!supabase) {
+          throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY on Vercel.");
+        }
+
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get("code");
+
+        let access_token: string | null = null;
+        let refresh_token: string | null = null;
+
+        if (code) {
+          // ✅ PKCE email-confirm flow:
+          // Exchange code -> session in the browser (where PKCE verifier lives),
+          // then forward TOKENS into the app.
+          setMessage("Finishing sign-in…");
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) throw error;
+
+          access_token = data?.session?.access_token ?? null;
+          refresh_token = data?.session?.refresh_token ?? null;
+
+          if (!access_token || !refresh_token) {
+            throw new Error("Could not retrieve session tokens after code exchange.");
+          }
+        } else {
+          // ✅ Implicit hash token flow (older):
+          const parsed = parseHashParams(window.location.hash || "");
+          access_token = parsed.access_token;
+          refresh_token = parsed.refresh_token;
+
+          if (!access_token || !refresh_token) {
+            throw new Error("No auth code or tokens found in the callback URL.");
+          }
+        }
+
+        if (cancelled) return;
+
+        setStatus("success");
+        setMessage("Signed in. Opening the app…");
+
+        // ✅ IMPORTANT: send tokens into the app, NOT the code
+        const deepLink = `shiftedclean://auth/callback#access_token=${encodeURIComponent(
+          access_token
+        )}&refresh_token=${encodeURIComponent(refresh_token)}`;
+
+        setTimeout(() => {
+          window.location.href = deepLink;
+        }, 250);
+
+        setTimeout(() => {
+          if (!cancelled) {
+            setMessage("If the app didn’t open automatically, tap “Open in Shifted” below.");
+          }
+        }, 3500);
+      } catch (e: any) {
+        if (cancelled) return;
+        setStatus("error");
+        setMessage(e?.message ?? "Sign-in failed.");
+      }
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   return (
     <div style={{ minHeight: "70vh", display: "grid", placeItems: "center" }}>
       <div style={{ maxWidth: 520, padding: 24, textAlign: "center" }}>
         <h1 style={{ fontSize: 22, marginBottom: 10 }}>Shifted</h1>
+        <p style={{ opacity: 0.85 }}>{message}</p>
 
-        {!envOk ? (
-          <>
-            <p style={{ opacity: 0.85 }}>
-              Missing <code>NEXT_PUBLIC_SUPABASE_URL</code> or{" "}
-              <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> on Vercel.
-            </p>
-            <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
-              Add them in Vercel → Project → Settings → Environment Variables, then redeploy.
-            </p>
-          </>
-        ) : (
-          <>
-            {payloadPresent ? (
-              <p style={{ opacity: 0.85 }}>Tap below to finish signing in and open Shifted.</p>
-            ) : (
-              <>
-                <p style={{ opacity: 0.85 }}>This page is used during email confirmation.</p>
-                <p style={{ marginTop: 10, opacity: 0.7, fontSize: 13 }}>
-                  If you opened this manually, there won’t be any sign-in code/tokens in the URL — that’s normal.
-                  Please use the link from your confirmation email.
-                </p>
-              </>
-            )}
-
-            <div style={{ marginTop: 18 }}>
-              <a
-                href={payloadPresent ? openHref : "#"}
-                onClick={(e) => {
-                  if (!payloadPresent) e.preventDefault();
-                }}
-                style={{
-                  display: "inline-block",
-                  padding: "12px 18px",
-                  borderRadius: 999,
-                  textDecoration: "none",
-                  fontWeight: 700,
-                  background: payloadPresent ? "#22C55E" : "#334155",
-                  color: payloadPresent ? "#051014" : "#cbd5e1",
-                  cursor: payloadPresent ? "pointer" : "not-allowed",
-                }}
-              >
-                Open in Shifted
-              </a>
-            </div>
-
-            {payloadPresent ? (
-              <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
-                If nothing happens, confirm the Shifted dev build is installed and your scheme is{" "}
-                <code>shiftedclean</code>.
-              </p>
-            ) : (
-              <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
-                Tip: try signing up again and click the confirmation email link from your phone.
-              </p>
-            )}
-          </>
+        {status !== "working" && (
+          <div style={{ marginTop: 18 }}>
+            <a
+              href="shiftedclean://auth/callback"
+              style={{
+                display: "inline-block",
+                padding: "12px 18px",
+                borderRadius: 999,
+                textDecoration: "none",
+                fontWeight: 700,
+                background: "#22C55E",
+                color: "#051014",
+              }}
+            >
+              Open in Shifted
+            </a>
+          </div>
         )}
       </div>
     </div>
