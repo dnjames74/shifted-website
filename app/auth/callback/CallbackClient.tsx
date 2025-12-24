@@ -4,30 +4,24 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
+/**
+ * Build a deep link that forwards the Supabase callback payload into the app.
+ * - If we have ?code=... (PKCE), pass it through
+ * - Otherwise pass through the entire #access_token=... fragment (implicit flow)
+ */
 function buildDeepLink(scheme: string) {
-  // Forward whatever Supabase gave us (either ?code=... OR #access_token=...)
-  const search = window.location.search || "";
+  const url = new URL(window.location.href);
+
+  const code = url.searchParams.get("code");
   const hash = window.location.hash || "";
 
-  // Prefer code flow if present (cleaner). Otherwise use hash flow.
-  const url = new URL(window.location.href);
-  const code = url.searchParams.get("code");
-
   if (code) {
+    // Keep it simple: forward only the code
     return `${scheme}://auth/callback?code=${encodeURIComponent(code)}`;
   }
 
-  // Hash may already include access_token/refresh_token
+  // Forward the entire hash as-is (includes access_token + refresh_token)
   return `${scheme}://auth/callback${hash}`;
-}
-
-function parseHashParams(hash: string) {
-  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
-  const params = new URLSearchParams(raw);
-  return {
-    access_token: params.get("access_token"),
-    refresh_token: params.get("refresh_token"),
-  };
 }
 
 export default function CallbackClient() {
@@ -37,39 +31,31 @@ export default function CallbackClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  const supabase = useMemo(() => {
-    if (!supabaseUrl || !supabaseAnonKey) return null;
-    return createClient(supabaseUrl, supabaseAnonKey);
-  }, [supabaseUrl, supabaseAnonKey]);
+  // We don't *need* to create a Supabase client here anymore to set a session.
+  // But we keep this check so the page can give a clear error if env vars are missing.
+  const envOk = useMemo(() => !!supabaseUrl && !!supabaseAnonKey, [supabaseUrl, supabaseAnonKey]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function run() {
       try {
-        if (!supabase) {
-          throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY on Vercel.");
+        if (!envOk) {
+          throw new Error(
+            "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY on Vercel."
+          );
         }
 
         const url = new URL(window.location.href);
         const code = url.searchParams.get("code");
+        const hasHashTokens =
+          typeof window !== "undefined" &&
+          (window.location.hash || "").includes("access_token=") &&
+          (window.location.hash || "").includes("refresh_token=");
 
-        // We *can* set the session in the browser, but the key thing is:
-        // we MUST forward the payload into the app deep link so the app can finish too.
-        if (code) {
-          setMessage("Finishing sign-in…");
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) throw error;
-        } else {
-          const { access_token, refresh_token } = parseHashParams(window.location.hash || "");
-
-          if (access_token && refresh_token) {
-            setMessage("Finishing sign-in…");
-            const { error } = await supabase.auth.setSession({ access_token, refresh_token });
-            if (error) throw error;
-          } else {
-            throw new Error("No auth code or tokens found in the callback URL.");
-          }
+        // If neither code nor tokens are present, we can't proceed.
+        if (!code && !hasHashTokens) {
+          throw new Error("No auth code or tokens found in the callback URL.");
         }
 
         if (cancelled) return;
@@ -101,7 +87,7 @@ export default function CallbackClient() {
     return () => {
       cancelled = true;
     };
-  }, [supabase]);
+  }, [envOk]);
 
   const openHref =
     typeof window !== "undefined" ? buildDeepLink("shiftedclean") : "shiftedclean://auth/callback";
