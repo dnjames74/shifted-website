@@ -2,7 +2,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 
 /**
  * Build a deep link that forwards the Supabase callback payload into the app.
@@ -16,11 +15,9 @@ function buildDeepLink(scheme: string) {
   const hash = window.location.hash || "";
 
   if (code) {
-    // Keep it simple: forward only the code
     return `${scheme}://auth/callback?code=${encodeURIComponent(code)}`;
   }
 
-  // Forward the entire hash as-is (includes access_token + refresh_token)
   return `${scheme}://auth/callback${hash}`;
 }
 
@@ -31,8 +28,7 @@ export default function CallbackClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // We don't *need* to create a Supabase client here anymore to set a session.
-  // But we keep this check so the page can give a clear error if env vars are missing.
+  // Only used to show a clear error if Vercel env vars are missing.
   const envOk = useMemo(() => !!supabaseUrl && !!supabaseAnonKey, [supabaseUrl, supabaseAnonKey]);
 
   useEffect(() => {
@@ -48,14 +44,20 @@ export default function CallbackClient() {
 
         const url = new URL(window.location.href);
         const code = url.searchParams.get("code");
-        const hasHashTokens =
-          typeof window !== "undefined" &&
-          (window.location.hash || "").includes("access_token=") &&
-          (window.location.hash || "").includes("refresh_token=");
 
-        // If neither code nor tokens are present, we can't proceed.
+        const hash = typeof window !== "undefined" ? window.location.hash || "" : "";
+        const hasHashTokens = hash.includes("access_token=") && hash.includes("refresh_token=");
+
+        // ✅ IMPORTANT FIX:
+        // If user manually visits /auth/callback (no code/tokens),
+        // do NOT auto-redirect to the app (prevents Safari “invalid address” popup).
         if (!code && !hasHashTokens) {
-          throw new Error("No auth code or tokens found in the callback URL.");
+          if (cancelled) return;
+          setStatus("success");
+          setMessage(
+            "This page is only used to finish sign-in. If you just installed the app, tap “Open in Shifted” below."
+          );
+          return;
         }
 
         if (cancelled) return;
