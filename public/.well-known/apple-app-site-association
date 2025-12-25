@@ -4,7 +4,12 @@
     "details": [
       {
         "appID": "W4XCD9N869.com.shifteddating.app",
-        "paths": [ "/open/*" ]
+        "paths": [
+          "/auth/callback",
+          "/auth/callback/*",
+          "/open",
+          "/open/*"
+        ]
       }
     ]
   }
