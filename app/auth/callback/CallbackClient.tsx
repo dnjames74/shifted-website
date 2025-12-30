@@ -2,31 +2,42 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 
-function extractHashTokens() {
-  const hash = (typeof window !== "undefined" ? window.location.hash : "").replace(/^#/, "");
-  const params = new URLSearchParams(hash);
-  return {
-    access_token: params.get("access_token"),
-    refresh_token: params.get("refresh_token"),
-    error: params.get("error"),
-    error_description: params.get("error_description"),
-  };
-}
-
-function hasCodeParam() {
+function hasAuthPayloadInUrl(): boolean {
   if (typeof window === "undefined") return false;
+
   const u = new URL(window.location.href);
-  return !!u.searchParams.get("code");
+  const code = u.searchParams.get("code");
+  const hash = window.location.hash || "";
+  const hasHashTokens = hash.includes("access_token=") && hash.includes("refresh_token=");
+  return !!code || hasHashTokens;
 }
 
-function buildOpenUrl(next: string, access_token?: string | null, refresh_token?: string | null) {
-  const u = new URL("https://www.shifteddating.com/open");
-  u.searchParams.set("next", next);
+function buildSchemeAuthLink(scheme: string) {
+  const url = new URL(window.location.href);
 
-  if (access_token) u.searchParams.set("access_token", access_token);
-  if (refresh_token) u.searchParams.set("refresh_token", refresh_token);
+  // PKCE/code flow (kept for compatibility)
+  const code = url.searchParams.get("code");
+  if (code) {
+    return `${scheme}://auth/callback?code=${encodeURIComponent(code)}`;
+  }
 
-  return u.toString();
+  // Hash token flow from Supabase email confirmations:
+  // https://.../auth/callback#access_token=...&refresh_token=...
+  const hash = (window.location.hash || "").replace(/^#/, "");
+  const params = new URLSearchParams(hash);
+
+  const access_token = params.get("access_token");
+  const refresh_token = params.get("refresh_token");
+
+  // Convert tokens to QUERY params (more reliable than keeping them in a fragment)
+  if (access_token && refresh_token) {
+    return `${scheme}://auth/callback?access_token=${encodeURIComponent(
+      access_token
+    )}&refresh_token=${encodeURIComponent(refresh_token)}`;
+  }
+
+  // Manual visit (no payload)
+  return `${scheme}://auth/callback`;
 }
 
 export default function CallbackClient() {
@@ -34,42 +45,31 @@ export default function CallbackClient() {
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const envOk = useMemo(() => !!supabaseUrl && !!supabaseAnonKey, [supabaseUrl, supabaseAnonKey]);
 
-  const openFallback = useMemo(() => buildOpenUrl("profile-setup"), []);
+  const envOk = useMemo(() => !!supabaseUrl && !!supabaseAnonKey, [supabaseUrl, supabaseAnonKey]);
+  const hasPayload = useMemo(() => hasAuthPayloadInUrl(), []);
+
+  const schemeAuthLink = useMemo(
+    () =>
+      typeof window !== "undefined"
+        ? buildSchemeAuthLink("shiftedclean")
+        : "shiftedclean://auth/callback",
+    []
+  );
+
+  // Optional: Universal link for non-auth use cases (marketing / open app)
+  const universalOpenUrl = "https://www.shifteddating.com/open?next=profile-setup";
 
   useEffect(() => {
     if (!envOk) return;
 
-    const { access_token, refresh_token, error, error_description } = extractHashTokens();
-
-    // If Supabase sent an error in the hash, show it instead of trying to open the app
-    if (error) {
-      setMessage(decodeURIComponent(error_description || "Email link error."));
+    if (hasPayload) {
+      setMessage("Tap the button below to finish signing in.");
       return;
     }
 
-    // If you ever switch to PKCE (?code=...), we can handle that later.
-    if (hasCodeParam()) {
-      setMessage("This link used a code flow. Please try again from the newest email link.");
-      return;
-    }
-
-    // If tokens exist, redirect to /open with tokens so the app can set the session.
-    if (access_token && refresh_token) {
-      setMessage("Opening Shifted…");
-
-      const target = buildOpenUrl("profile-setup", access_token, refresh_token);
-
-      const t = setTimeout(() => {
-        window.location.href = target;
-      }, 150);
-
-      return () => clearTimeout(t);
-    }
-
-    setMessage("Tap below to open Shifted.");
-  }, [envOk]);
+    setMessage("This page is normally opened from your confirmation email link.");
+  }, [envOk, hasPayload]);
 
   return (
     <div style={{ minHeight: "70vh", display: "grid", placeItems: "center" }}>
@@ -79,7 +79,8 @@ export default function CallbackClient() {
         {!envOk ? (
           <>
             <p style={{ opacity: 0.85 }}>
-              Missing <code>NEXT_PUBLIC_SUPABASE_URL</code> or <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> on Vercel.
+              Missing <code>NEXT_PUBLIC_SUPABASE_URL</code> or{" "}
+              <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> on Vercel.
             </p>
             <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
               Add them in Vercel → Project → Settings → Environment Variables, then redeploy.
@@ -89,26 +90,52 @@ export default function CallbackClient() {
           <>
             <p style={{ opacity: 0.85 }}>{message}</p>
 
-            <div style={{ marginTop: 18 }}>
-              <a
-                href={openFallback}
-                style={{
-                  display: "inline-block",
-                  padding: "12px 18px",
-                  borderRadius: 999,
-                  textDecoration: "none",
-                  fontWeight: 700,
-                  background: "#22C55E",
-                  color: "#051014",
-                }}
-              >
-                Open Shifted
-              </a>
-            </div>
+            {hasPayload ? (
+              <>
+                <div style={{ marginTop: 18 }}>
+                  {/* PRIMARY: Scheme link with tokens/code */}
+                  <a
+                    href={schemeAuthLink}
+                    style={{
+                      display: "inline-block",
+                      padding: "12px 18px",
+                      borderRadius: 999,
+                      textDecoration: "none",
+                      fontWeight: 700,
+                      background: "#22C55E",
+                      color: "#051014",
+                    }}
+                  >
+                    Finish sign-in and open Shifted
+                  </a>
+                </div>
 
-            <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
-              If it opens the app but you’re not signed in, we’ll pass tokens through this page automatically.
-            </p>
+                <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
+                  Important: Don’t use Safari’s top “Open” radio button — it opens the app
+                  without the sign-in tokens. Use the button above.
+                </p>
+              </>
+            ) : (
+              <>
+                <div style={{ marginTop: 18 }}>
+                  {/* For manual testing / marketing only */}
+                  <a
+                    href={universalOpenUrl}
+                    style={{
+                      display: "inline-block",
+                      padding: "12px 18px",
+                      borderRadius: 999,
+                      textDecoration: "none",
+                      fontWeight: 700,
+                      background: "#22C55E",
+                      color: "#051014",
+                    }}
+                  >
+                    Open Shifted
+                  </a>
+                </div>
+              </>
+            )}
           </>
         )}
       </div>
