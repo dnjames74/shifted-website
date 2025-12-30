@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useState } from "react";
 
 function hasAuthPayloadInUrl(): boolean {
   if (typeof window === "undefined") return false;
-
   const u = new URL(window.location.href);
   const code = u.searchParams.get("code");
   const hash = window.location.hash || "";
@@ -12,32 +11,30 @@ function hasAuthPayloadInUrl(): boolean {
   return !!code || hasHashTokens;
 }
 
-function buildSchemeAuthLink(scheme: string) {
+function buildUniversalOpenUrlFromCallback() {
   const url = new URL(window.location.href);
 
-  // PKCE/code flow (kept for compatibility)
+  // PKCE / code flow (keep compatibility)
   const code = url.searchParams.get("code");
   if (code) {
-    return `${scheme}://auth/callback?code=${encodeURIComponent(code)}`;
+    return `https://www.shifteddating.com/open?next=profile-setup&code=${encodeURIComponent(code)}`;
   }
 
-  // Hash token flow from Supabase email confirmations:
-  // https://.../auth/callback#access_token=...&refresh_token=...
+  // Hash token flow
   const hash = (window.location.hash || "").replace(/^#/, "");
   const params = new URLSearchParams(hash);
 
   const access_token = params.get("access_token");
   const refresh_token = params.get("refresh_token");
 
-  // Convert tokens to QUERY params (more reliable than keeping them in a fragment)
   if (access_token && refresh_token) {
-    return `${scheme}://auth/callback?access_token=${encodeURIComponent(
+    return `https://www.shifteddating.com/open?next=profile-setup&access_token=${encodeURIComponent(
       access_token
     )}&refresh_token=${encodeURIComponent(refresh_token)}`;
   }
 
-  // Manual visit (no payload)
-  return `${scheme}://auth/callback`;
+  // No payload (manual visit)
+  return "https://www.shifteddating.com/open?next=profile-setup";
 }
 
 export default function CallbackClient() {
@@ -45,31 +42,25 @@ export default function CallbackClient() {
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
   const envOk = useMemo(() => !!supabaseUrl && !!supabaseAnonKey, [supabaseUrl, supabaseAnonKey]);
+
   const hasPayload = useMemo(() => hasAuthPayloadInUrl(), []);
-
-  const schemeAuthLink = useMemo(
-    () =>
-      typeof window !== "undefined"
-        ? buildSchemeAuthLink("shiftedclean")
-        : "shiftedclean://auth/callback",
-    []
-  );
-
-  // Optional: Universal link for non-auth use cases (marketing / open app)
-  const universalOpenUrl = "https://www.shifteddating.com/open?next=profile-setup";
+  const openUrl = useMemo(() => buildUniversalOpenUrlFromCallback(), []);
 
   useEffect(() => {
     if (!envOk) return;
 
     if (hasPayload) {
-      setMessage("Tap the button below to finish signing in.");
-      return;
+      setMessage("Opening Shifted…");
+      // Auto-redirect to Universal Link WITH tokens/code
+      const t = setTimeout(() => {
+        window.location.href = openUrl;
+      }, 150);
+      return () => clearTimeout(t);
     }
 
     setMessage("This page is normally opened from your confirmation email link.");
-  }, [envOk, hasPayload]);
+  }, [envOk, hasPayload, openUrl]);
 
   return (
     <div style={{ minHeight: "70vh", display: "grid", placeItems: "center" }}>
@@ -79,8 +70,7 @@ export default function CallbackClient() {
         {!envOk ? (
           <>
             <p style={{ opacity: 0.85 }}>
-              Missing <code>NEXT_PUBLIC_SUPABASE_URL</code> or{" "}
-              <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> on Vercel.
+              Missing <code>NEXT_PUBLIC_SUPABASE_URL</code> or <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> on Vercel.
             </p>
             <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
               Add them in Vercel → Project → Settings → Environment Variables, then redeploy.
@@ -88,54 +78,30 @@ export default function CallbackClient() {
           </>
         ) : (
           <>
-            <p style={{ opacity: 0.85 }}>{message}</p>
+            <p style={{ opacity: 0.85 }}>
+              {hasPayload ? "Tap below if Shifted didn’t open automatically." : message}
+            </p>
 
-            {hasPayload ? (
-              <>
-                <div style={{ marginTop: 18 }}>
-                  {/* PRIMARY: Scheme link with tokens/code */}
-                  <a
-                    href={schemeAuthLink}
-                    style={{
-                      display: "inline-block",
-                      padding: "12px 18px",
-                      borderRadius: 999,
-                      textDecoration: "none",
-                      fontWeight: 700,
-                      background: "#22C55E",
-                      color: "#051014",
-                    }}
-                  >
-                    Finish sign-in and open Shifted
-                  </a>
-                </div>
+            <div style={{ marginTop: 18 }}>
+              <a
+                href={openUrl}
+                style={{
+                  display: "inline-block",
+                  padding: "12px 18px",
+                  borderRadius: 999,
+                  textDecoration: "none",
+                  fontWeight: 700,
+                  background: "#22C55E",
+                  color: "#051014",
+                }}
+              >
+                Open Shifted
+              </a>
+            </div>
 
-                <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
-                  Important: Don’t use Safari’s top “Open” radio button — it opens the app
-                  without the sign-in tokens. Use the button above.
-                </p>
-              </>
-            ) : (
-              <>
-                <div style={{ marginTop: 18 }}>
-                  {/* For manual testing / marketing only */}
-                  <a
-                    href={universalOpenUrl}
-                    style={{
-                      display: "inline-block",
-                      padding: "12px 18px",
-                      borderRadius: 999,
-                      textDecoration: "none",
-                      fontWeight: 700,
-                      background: "#22C55E",
-                      color: "#051014",
-                    }}
-                  >
-                    Open Shifted
-                  </a>
-                </div>
-              </>
-            )}
+            <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
+              Universal Links are more reliable on iOS than custom scheme redirects.
+            </p>
           </>
         )}
       </div>
