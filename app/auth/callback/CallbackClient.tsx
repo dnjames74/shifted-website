@@ -1,27 +1,31 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 
-function hasAuthPayloadInUrl(): boolean {
-  if (typeof window === "undefined") return false;
-  const u = new URL(window.location.href);
+function safeGetHref() {
+  if (typeof window === "undefined") return null;
+  return window.location.href;
+}
+
+function hasAuthPayloadInHref(href: string): boolean {
+  const u = new URL(href);
   const code = u.searchParams.get("code");
-  const hash = window.location.hash || "";
+  const hash = u.hash || "";
   const hasHashTokens = hash.includes("access_token=") && hash.includes("refresh_token=");
   return !!code || hasHashTokens;
 }
 
-function buildUniversalOpenUrlFromCallback() {
-  const url = new URL(window.location.href);
+function buildUniversalOpenUrlFromHref(href: string) {
+  const url = new URL(href);
 
-  // PKCE / code flow (keep compatibility)
+  // PKCE / code flow
   const code = url.searchParams.get("code");
   if (code) {
     return `https://www.shifteddating.com/open?next=profile-setup&code=${encodeURIComponent(code)}`;
   }
 
   // Hash token flow
-  const hash = (window.location.hash || "").replace(/^#/, "");
+  const hash = (url.hash || "").replace(/^#/, "");
   const params = new URLSearchParams(hash);
 
   const access_token = params.get("access_token");
@@ -33,34 +37,40 @@ function buildUniversalOpenUrlFromCallback() {
     )}&refresh_token=${encodeURIComponent(refresh_token)}`;
   }
 
-  // No payload (manual visit)
+  // Manual visit (no payload)
   return "https://www.shifteddating.com/open?next=profile-setup";
 }
 
 export default function CallbackClient() {
   const [message, setMessage] = useState("Preparing…");
+  const [openUrl, setOpenUrl] = useState("https://www.shifteddating.com/open?next=profile-setup");
+  const [hasPayload, setHasPayload] = useState(false);
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const envOk = useMemo(() => !!supabaseUrl && !!supabaseAnonKey, [supabaseUrl, supabaseAnonKey]);
-
-  const hasPayload = useMemo(() => hasAuthPayloadInUrl(), []);
-  const openUrl = useMemo(() => buildUniversalOpenUrlFromCallback(), []);
+  const envOk =
+    !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   useEffect(() => {
     if (!envOk) return;
 
-    if (hasPayload) {
+    const href = safeGetHref();
+    if (!href) return;
+
+    const payload = hasAuthPayloadInHref(href);
+    setHasPayload(payload);
+
+    const url = buildUniversalOpenUrlFromHref(href);
+    setOpenUrl(url);
+
+    if (payload) {
       setMessage("Opening Shifted…");
-      // Auto-redirect to Universal Link WITH tokens/code
       const t = setTimeout(() => {
-        window.location.href = openUrl;
+        window.location.href = url;
       }, 150);
       return () => clearTimeout(t);
     }
 
     setMessage("This page is normally opened from your confirmation email link.");
-  }, [envOk, hasPayload, openUrl]);
+  }, [envOk]);
 
   return (
     <div style={{ minHeight: "70vh", display: "grid", placeItems: "center" }}>
@@ -70,7 +80,8 @@ export default function CallbackClient() {
         {!envOk ? (
           <>
             <p style={{ opacity: 0.85 }}>
-              Missing <code>NEXT_PUBLIC_SUPABASE_URL</code> or <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> on Vercel.
+              Missing <code>NEXT_PUBLIC_SUPABASE_URL</code> or{" "}
+              <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> on Vercel.
             </p>
             <p style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
               Add them in Vercel → Project → Settings → Environment Variables, then redeploy.
