@@ -121,17 +121,25 @@ async function sendWaitlistEmail(toEmail: string, already: boolean) {
     already,
   });
 
-  const transporter = nodemailer.createTransport({
-    host: smtpHost,
-    port: 587,
-    secure: false, // STARTTLS
-    requireTLS: true,
-    auth: { user: smtpUser, pass: smtpPass },
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 12000,
-    tls: { servername: smtpHost },
-  });
+const transporter = nodemailer.createTransport({
+  host: smtpHost,
+  port: 587,
+  secure: false, // MUST be false for 587
+  auth: {
+    user: smtpUser,
+    pass: smtpPass,
+  },
+  requireTLS: true,
+  tls: {
+    rejectUnauthorized: false,
+  },
+  connectionTimeout: 10_000,
+  greetingTimeout: 10_000,
+  socketTimeout: 10_000,
+});
+
+await transporter.verify();
+console.info("[waitlist-email] transporter verified");
 
   try {
     await withTimeout(transporter.verify(), 12000, "transporter.verify");
