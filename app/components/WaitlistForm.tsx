@@ -2,10 +2,29 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const CITIES = ["Toronto", "Vancouver", "Calgary", "Edmonton", "Montreal", "Ottawa", "Other"] as const;
+const CITIES = [
+  "Toronto",
+  "Vancouver",
+  "Calgary",
+  "Edmonton",
+  "Montreal",
+  "Ottawa",
+  "Other",
+] as const;
 
-type UtmKey = "utm_source" | "utm_medium" | "utm_campaign" | "utm_term" | "utm_content";
-const UTM_KEYS: UtmKey[] = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"];
+type UtmKey =
+  | "utm_source"
+  | "utm_medium"
+  | "utm_campaign"
+  | "utm_term"
+  | "utm_content";
+const UTM_KEYS: UtmKey[] = [
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "utm_content",
+];
 
 function readUtmParams(): Partial<Record<UtmKey, string>> {
   if (typeof window === "undefined") return {};
@@ -29,7 +48,9 @@ export default function WaitlistForm() {
   const [referrer, setReferrer] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(
+    null,
+  );
 
   const utms = useMemo(() => readUtmParams(), []);
 
@@ -76,12 +97,20 @@ export default function WaitlistForm() {
         return;
       }
 
+      // ✅ Updated success copy to match TestFlight rollout
       if (data?.already) {
-        setStatus({ ok: true, msg: "You’re already on the list — we’ll email you when we open." });
+        setStatus({
+          ok: true,
+          msg: "You’re already on the list — we’ll email you a TestFlight invite as soon as a spot opens.",
+        });
         return;
       }
 
-      setStatus({ ok: true, msg: "You're on the list. We'll email you when we open." });
+      setStatus({
+        ok: true,
+        msg: "You're on the list! We’ll email you a TestFlight invite as soon as a spot opens.",
+      });
+
       setEmail("");
       setCity("");
       // keep isShift as-is (your call)
@@ -95,7 +124,15 @@ export default function WaitlistForm() {
   return (
     <form onSubmit={onSubmit} style={{ marginTop: 16 }}>
       {/* Honeypot */}
-      <div style={{ position: "absolute", left: -9999, width: 1, height: 1, overflow: "hidden" }}>
+      <div
+        style={{
+          position: "absolute",
+          left: -9999,
+          width: 1,
+          height: 1,
+          overflow: "hidden",
+        }}
+      >
         <label>
           Company
           <input
@@ -115,6 +152,7 @@ export default function WaitlistForm() {
           inputMode="email"
           autoComplete="email"
           required
+          disabled={loading}
           style={{
             width: "100%",
             padding: "12px 14px",
@@ -123,6 +161,7 @@ export default function WaitlistForm() {
             background: "rgba(255,255,255,0.06)",
             color: "white",
             outline: "none",
+            opacity: loading ? 0.85 : 1,
           }}
         />
 
@@ -130,6 +169,7 @@ export default function WaitlistForm() {
           <select
             value={city}
             onChange={(e) => setCity(e.target.value)}
+            disabled={loading}
             style={{
               width: "100%",
               padding: "12px 14px",
@@ -138,6 +178,7 @@ export default function WaitlistForm() {
               background: "rgba(255,255,255,0.06)",
               color: "white",
               outline: "none",
+              opacity: loading ? 0.85 : 1,
             }}
           >
             <option value="">City (optional)</option>
@@ -159,6 +200,7 @@ export default function WaitlistForm() {
               cursor: loading ? "not-allowed" : "pointer",
               background: "#00ff88",
               color: "#051014",
+              opacity: loading ? 0.85 : 1,
             }}
           >
             {loading ? "Joining..." : "Join the waitlist"}
@@ -173,11 +215,20 @@ export default function WaitlistForm() {
             color: "rgba(255,255,255,0.75)",
           }}
         >
-          <input type="checkbox" checked={isShift} onChange={(e) => setIsShift(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={isShift}
+            onChange={(e) => setIsShift(e.target.checked)}
+            disabled={loading}
+          />
           I work shifts (or keep a non-9-to-5 schedule)
         </label>
 
-        {status && <div style={{ color: status.ok ? "#00ff88" : "#ff6b6b", fontSize: 13 }}>{status.msg}</div>}
+        {status && (
+          <div style={{ color: status.ok ? "#00ff88" : "#ff6b6b", fontSize: 13 }}>
+            {status.msg}
+          </div>
+        )}
       </div>
     </form>
   );

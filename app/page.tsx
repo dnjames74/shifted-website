@@ -26,24 +26,71 @@ export default function Page() {
         >
           {/* Logo */}
           <div style={{ display: "flex", justifyContent: "center" }}>
-            <img src="/logo.png" alt="Shifted" width={170} style={{ display: "block" }} />
+            <img
+              src="/logo.png"
+              alt="Shifted"
+              width={170}
+              style={{ display: "block" }}
+            />
           </div>
 
           {/* Headline */}
-          <h1 style={{ margin: "16px 0 8px", fontSize: 26, fontWeight: 900, color: "#ffffff" }}>
+          <h1
+            style={{
+              margin: "16px 0 8px",
+              fontSize: 26,
+              fontWeight: 900,
+              color: "#ffffff",
+            }}
+          >
             Shifted Dating
           </h1>
 
-          <p style={{ margin: 0, color: "#9ca3af", fontSize: 15, lineHeight: 1.6 }}>
+          <p
+            style={{
+              margin: 0,
+              color: "#9ca3af",
+              fontSize: 15,
+              lineHeight: 1.6,
+            }}
+          >
             Meet people on your schedule — no spam, no stress.
           </p>
 
           <div style={{ height: 1, background: "#111827", margin: "18px 0" }} />
 
           {/* Waitlist */}
-          <p style={{ margin: "0 0 10px 0", color: "#d1d5db", fontSize: 14, lineHeight: 1.6 }}>
-            Join the waitlist for early access:
+          <p
+            style={{
+              margin: "0 0 10px 0",
+              color: "#d1d5db",
+              fontSize: 14,
+              lineHeight: 1.6,
+            }}
+          >
+            Join the waitlist for <span style={{ color: "#ffffff", fontWeight: 800 }}>early iOS access</span>{" "}
+            (TestFlight). We’ll email you an invite as spots open.
           </p>
+
+          <div
+            style={{
+              marginBottom: 10,
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid #1f2937",
+              background: "#05070A",
+              color: "#9ca3af",
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            <div style={{ color: "#ffffff", fontWeight: 800, marginBottom: 4 }}>
+              What to expect
+            </div>
+            <div>• iPhone testers first (Android later).</div>
+            <div>• You’ll install via the TestFlight app (free from Apple).</div>
+            <div>• We’ll ask for quick feedback on messaging, matches, and notifications.</div>
+          </div>
 
           <WaitlistForm />
 
@@ -54,22 +101,41 @@ export default function Page() {
             Need help?{" "}
             <a
               href="mailto:support@shifteddating.com"
-              style={{ color: "#00ff88", fontWeight: 800, textDecoration: "none" }}
+              style={{
+                color: "#00ff88",
+                fontWeight: 800,
+                textDecoration: "none",
+              }}
             >
               support@shifteddating.com
             </a>
           </p>
         </div>
-          <p style={{ marginTop: 10, color: "#6b7280", fontSize: 12, textAlign: "center" }}>
-  <a href="/privacy" style={{ color: "#9ca3af", marginRight: 12 }}>
-    Privacy Policy
-  </a>
-  <a href="/terms" style={{ color: "#9ca3af" }}>
-    Terms of Service
-  </a>
-</p>
 
-        <p style={{ marginTop: 14, color: "#6b7280", fontSize: 12, textAlign: "center" }}>
+        <p
+          style={{
+            marginTop: 10,
+            color: "#6b7280",
+            fontSize: 12,
+            textAlign: "center",
+          }}
+        >
+          <a href="/privacy" style={{ color: "#9ca3af", marginRight: 12 }}>
+            Privacy Policy
+          </a>
+          <a href="/terms" style={{ color: "#9ca3af" }}>
+            Terms of Service
+          </a>
+        </p>
+
+        <p
+          style={{
+            marginTop: 14,
+            color: "#6b7280",
+            fontSize: 12,
+            textAlign: "center",
+          }}
+        >
           © {year} Shifted Dating
         </p>
       </div>
