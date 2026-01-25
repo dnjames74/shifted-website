@@ -5,9 +5,6 @@ import nodemailer from "nodemailer";
 
 export const runtime = "nodejs";
 
-// Bump this when you redeploy so we can confirm the code running in Vercel
-const EMAIL_DEBUG_VERSION = "waitlist-email-debug-v3";
-
 // --- tiny in-memory rate limiter (best-effort; resets on cold starts) ---
 type Bucket = { count: number; resetAt: number };
 const ipBuckets = new Map<string, Bucket>();
@@ -65,18 +62,17 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function maskEmail(email: string) {
+function redactEmail(email: string) {
   const [u, d] = email.split("@");
   if (!u || !d) return "***";
-  const uMask = u.length <= 2 ? `${u[0] ?? "*"}*` : `${u[0]}***${u[u.length - 1]}`;
-  const dParts = d.split(".");
-  const dMain = dParts[0] ?? d;
-  const dMask = dMain.length <= 2 ? `${dMain[0] ?? "*"}*` : `${dMain[0]}***${dMain[dMain.length - 1]}`;
-  return `${uMask}@${dMask}.${dParts.slice(1).join(".") || ""}`.replace(/\.$/, "");
+  return `${u.slice(0, 1)}***@${d.slice(0, 1)}***`;
 }
 
 function getWaitlistEmailHtml(opts: { already: boolean }) {
-  const headline = opts.already ? "You’re already on the waitlist ✅" : "You’re on the waitlist ✅";
+  const headline = opts.already
+    ? "You’re already on the waitlist ✅"
+    : "You’re on the waitlist ✅";
+
   const body = opts.already
     ? "You’re already on our list. We’ll email you a TestFlight invite as soon as a spot opens."
     : "Thanks for joining. We’ll email you a TestFlight invite as soon as a spot opens.";
@@ -109,66 +105,68 @@ function getWaitlistEmailHtml(opts: { already: boolean }) {
 }
 
 async function sendWaitlistEmail(toEmail: string, already: boolean) {
-  const debug = process.env.WAITLIST_EMAIL_DEBUG === "1";
+  const version = "waitlist-email-debug-v3";
+  const debug = (process.env.WAITLIST_EMAIL_DEBUG || "").toLowerCase() === "true";
 
+  // If SMTP isn’t configured, just skip (don’t block signups)
   const smtpUser = process.env.ZOHO_SMTP_USER;
   const smtpPass = process.env.ZOHO_SMTP_PASS;
   const smtpHost = process.env.ZOHO_SMTP_HOST || "smtp.zoho.com";
+  const smtpPort = Number(process.env.ZOHO_SMTP_PORT || "587");
   const fromName = process.env.ZOHO_FROM_NAME || "Shifted Dating";
-  const fromEmail = process.env.ZOHO_FROM_EMAIL || smtpUser;
+  const fromEmail = process.env.ZOHO_FROM_EMAIL || smtpUser || "support@shifteddating.com";
 
-  const portRaw = process.env.ZOHO_SMTP_PORT || "587";
-  const smtpPort = Number(portRaw);
-
-  console.info("[waitlist-email] version", EMAIL_DEBUG_VERSION);
+  console.info("[waitlist-email] version", version);
   console.info("[waitlist-email] env presence", {
     hasUser: !!smtpUser,
     hasPass: !!smtpPass,
     hasHost: !!smtpHost,
-    hasPort: !!smtpPort,
-    hasFromName: !!fromName,
-    hasFromEmail: !!fromEmail,
+    hasPort: !!process.env.ZOHO_SMTP_PORT,
+    hasFromName: !!process.env.ZOHO_FROM_NAME,
+    hasFromEmail: !!process.env.ZOHO_FROM_EMAIL,
     debug,
   });
 
-  // If SMTP isn’t configured, skip (don’t block signups)
   if (!smtpUser || !smtpPass) return;
 
-  // Zoho + Vercel: prefer 587 STARTTLS
-  const transporter = nodemailer.createTransport({
-    host: smtpHost,
-    port: smtpPort || 587,
-    secure: false, // MUST be false for 587
-    auth: { user: smtpUser, pass: smtpPass },
-    requireTLS: true,
-    tls: { rejectUnauthorized: false },
-
-    // Prevent “hangs forever”
-    connectionTimeout: 10_000,
-    greetingTimeout: 10_000,
-    socketTimeout: 10_000,
-  });
-
-  const subject = already ? "You’re already on the Shifted waitlist" : "You’re on the Shifted waitlist";
-  const html = getWaitlistEmailHtml({ already });
-
+  const secure = smtpPort === 465; // 465 = SSL, 587 = STARTTLS
   console.info("[waitlist-email] attempting send", {
-    to: maskEmail(toEmail),
-    from: fromEmail ? maskEmail(fromEmail) : "***",
+    to: redactEmail(toEmail),
+    from: redactEmail(fromEmail),
     host: smtpHost,
-    port: smtpPort || 587,
-    secure: false,
+    port: smtpPort,
+    secure,
     already,
     debug,
   });
 
-  try {
-    // IMPORTANT: in debug mode we await verify + send so logs are guaranteed
-    if (debug) {
-      await transporter.verify();
-      console.info("[waitlist-email] transporter verified");
-    }
+  const transporter = nodemailer.createTransport({
+    host: smtpHost,
+    port: smtpPort,
+    secure,
+    auth: { user: smtpUser, pass: smtpPass },
 
+    // Timeouts so a bad SMTP connect doesn’t “hang” forever
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000,
+
+    // Zoho on 587 typically wants STARTTLS
+    requireTLS: smtpPort === 587,
+    tls: {
+      servername: smtpHost,
+    },
+
+    ...(debug ? { logger: true, debug: true } : {}),
+  });
+
+  const subject = already
+    ? "You’re already on the Shifted waitlist"
+    : "You’re on the Shifted waitlist";
+
+  const html = getWaitlistEmailHtml({ already });
+
+  try {
     const info = await transporter.sendMail({
       from: `"${fromName}" <${fromEmail}>`,
       to: toEmail,
@@ -179,23 +177,22 @@ async function sendWaitlistEmail(toEmail: string, already: boolean) {
         : "You’re on the list! We’ll email you a TestFlight invite as soon as a spot opens.",
     });
 
-    console.info("[waitlist-email] sendMail OK", {
-      messageId: info?.messageId || null,
-      accepted: Array.isArray(info?.accepted) ? info.accepted.length : null,
-      rejected: Array.isArray(info?.rejected) ? info.rejected.length : null,
-      response: info?.response || null,
+    console.info("[waitlist-email] sent ok", {
+      messageId: (info as any)?.messageId,
+      response: (info as any)?.response,
+      accepted: (info as any)?.accepted,
+      rejected: (info as any)?.rejected,
     });
   } catch (err: any) {
-    console.error("[waitlist-email] SMTP error", {
+    console.error("[waitlist-email] send failed", {
       name: err?.name,
       message: err?.message,
       code: err?.code,
       command: err?.command,
       response: err?.response,
       responseCode: err?.responseCode,
-      stack: err?.stack,
     });
-    throw err; // in debug mode this helps us see failures clearly in logs
+    throw err;
   }
 }
 
@@ -205,14 +202,21 @@ export async function POST(req: Request) {
     const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl) {
-      return NextResponse.json({ ok: false, error: "Missing SUPABASE_URL" }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: "Missing SUPABASE_URL" },
+        { status: 500 }
+      );
     }
     if (!serviceRole) {
-      return NextResponse.json({ ok: false, error: "Missing SUPABASE_SERVICE_ROLE_KEY" }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: "Missing SUPABASE_SERVICE_ROLE_KEY" },
+        { status: 500 }
+      );
     }
 
     const ip = getIP(req);
 
+    // Rate limit: 10 requests per 10 minutes per IP
     const rl = rateLimit(ip, 10, 10 * 60 * 1000);
     if (!rl.ok) {
       return NextResponse.json(
@@ -220,28 +224,42 @@ export async function POST(req: Request) {
         {
           status: 429,
           headers: {
-            "Retry-After": String(Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 1000))),
+            "Retry-After": String(
+              Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 1000))
+            ),
           },
         }
       );
     }
 
-    const supabase = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
+    const supabase = createClient(supabaseUrl, serviceRole, {
+      auth: { persistSession: false },
+    });
 
     const body = await req.json().catch(() => ({} as any));
 
+    // Honeypot: must be empty.
     const hp = cleanStr(body?.company, 200);
-    if (hp) return NextResponse.json({ ok: true });
+    if (hp) {
+      // Pretend success to avoid tipping off bots
+      return NextResponse.json({ ok: true });
+    }
 
     const emailRaw = (body?.email ?? "").toString().trim().toLowerCase();
     if (!emailRaw || !isValidEmail(emailRaw)) {
-      return NextResponse.json({ ok: false, error: "Enter a valid email." }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Enter a valid email." },
+        { status: 400 }
+      );
     }
 
     const payload = {
       email: emailRaw,
       city: cleanStr(body?.city, 120),
-      is_shift_worker: typeof body?.is_shift_worker === "boolean" ? (body.is_shift_worker as boolean) : null,
+      is_shift_worker:
+        typeof body?.is_shift_worker === "boolean"
+          ? (body.is_shift_worker as boolean)
+          : null,
       source: cleanStr(body?.source, 120),
       referrer: cleanStr(body?.referrer, 300),
       utm_source: cleanStr(body?.utm_source, 120),
@@ -255,30 +273,28 @@ export async function POST(req: Request) {
 
     const { error } = await supabase.from("waitlist_signups").insert([payload]);
 
-    const debug = process.env.WAITLIST_EMAIL_DEBUG === "1";
-
+    // duplicates throw 23505 because of unique index on lower(email)
     if (error) {
       if ((error as any).code === "23505") {
-        // Duplicate: already on list
-        if (debug) {
-          await sendWaitlistEmail(emailRaw, true);
-        } else {
-          sendWaitlistEmail(emailRaw, true).catch(() => {});
-        }
+        // Fire-and-forget (don’t slow down response)
+        sendWaitlistEmail(emailRaw, true).catch(() => {});
         return NextResponse.json({ ok: true, already: true });
       }
-      return NextResponse.json({ ok: false, error: "Insert failed." }, { status: 500 });
+
+      return NextResponse.json(
+        { ok: false, error: "Insert failed." },
+        { status: 500 }
+      );
     }
 
-    // New signup
-    if (debug) {
-      await sendWaitlistEmail(emailRaw, false);
-    } else {
-      sendWaitlistEmail(emailRaw, false).catch(() => {});
-    }
+    // Fire-and-forget (don’t slow down response)
+    sendWaitlistEmail(emailRaw, false).catch(() => {});
 
     return NextResponse.json({ ok: true });
   } catch {
-    return NextResponse.json({ ok: false, error: "Something went wrong." }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: "Something went wrong." },
+      { status: 500 }
+    );
   }
 }
