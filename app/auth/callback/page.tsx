@@ -2,24 +2,41 @@
 
 import { useEffect } from "react";
 
-function buildDeepLink() {
-  const hash = window.location.hash || "";
-  const search = window.location.search || "";
+function buildQueryFromUrl(href: string) {
+  // Turn BOTH ?query and #hash into one query string
+  const url = new URL(href);
 
-  // ✅ Default to PROD scheme
-  // ✅ Allow forcing DEV via ?dev=1 (handy for testing)
-  const params = new URLSearchParams(search);
-  const forceDev = params.get("dev") === "1";
+  const combined = new URLSearchParams(url.searchParams);
 
-  const scheme = forceDev ? "shiftedclean-dev" : "shiftedclean";
+  // Hash can be like: #access_token=...&refresh_token=...&type=recovery
+  const hash = (url.hash || "").replace(/^#/, "");
+  if (hash) {
+    const hashParams = new URLSearchParams(hash);
+    hashParams.forEach((value, key) => {
+      if (!combined.has(key)) combined.set(key, value);
+    });
+  }
 
-  return `${scheme}://auth/callback${search}${hash}`;
+  return combined.toString();
 }
 
-export default function AuthCallbackPage() {
+export default function AuthCallbackBridge() {
   useEffect(() => {
-    const target = buildDeepLink();
-    window.location.replace(target);
+    const qs = buildQueryFromUrl(window.location.href);
+
+    // Try DEV first (so your dev build wins during testing), then PROD fallback.
+    const dev = `shiftedclean-dev://auth/callback${qs ? `?${qs}` : ""}`;
+    const prod = `shiftedclean://auth/callback${qs ? `?${qs}` : ""}`;
+
+    // Attempt dev scheme first
+    window.location.replace(dev);
+
+    // Fallback to prod shortly after (if dev not installed)
+    const t = setTimeout(() => {
+      window.location.replace(prod);
+    }, 700);
+
+    return () => clearTimeout(t);
   }, []);
 
   return (
