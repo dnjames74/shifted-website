@@ -6,7 +6,9 @@
         "appID": "W4XCD9N869.com.shifteddating.app",
         "paths": [
           "/open",
-          "/open/*"
+          "/open/*",
+          "/auth/callback",
+          "/auth/callback/*"
         ]
       }
     ]
