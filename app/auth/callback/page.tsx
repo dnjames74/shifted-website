@@ -1,15 +1,13 @@
-// shifted-website/app/auth/callback/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 
 function buildQueryFromUrl(href: string) {
-  // Turn BOTH ?query and #hash into one query string
+  // Combine BOTH ?query and #hash into one query string
   const url = new URL(href);
 
   const combined = new URLSearchParams(url.searchParams);
 
-  // Hash can be like: #access_token=...&refresh_token=...&type=recovery
   const hash = (url.hash || "").replace(/^#/, "");
   if (hash) {
     const hashParams = new URLSearchParams(hash);
@@ -18,69 +16,51 @@ function buildQueryFromUrl(href: string) {
     });
   }
 
-  // app=dev|prod is ONLY for the website to decide which scheme to open.
-  combined.delete("app");
-
   return combined.toString();
 }
 
-function getPreferredAppFromUrl(href: string): "dev" | "prod" {
-  try {
-    const url = new URL(href);
-    const fromQuery = url.searchParams.get("app");
-    if (fromQuery === "dev") return "dev";
-    return "prod";
-  } catch {
-    return "prod";
-  }
-}
-
 export default function AuthCallbackBridge() {
-  const [attempted, setAttempted] = useState(false);
-
-  const { preferred, qs, devUrl, prodUrl, firstUrl, secondUrl } = useMemo(() => {
-    const href =
-      typeof window !== "undefined" ? window.location.href : "https://www.shifteddating.com/auth/callback";
-
-    const preferred = getPreferredAppFromUrl(href);
-    const qs = buildQueryFromUrl(href);
-
-    const devUrl = `shiftedclean-dev://auth/callback${qs ? `?${qs}` : ""}`;
-    const prodUrl = `shiftedclean://auth/callback${qs ? `?${qs}` : ""}`;
-
-    const firstUrl = preferred === "dev" ? devUrl : prodUrl;
-    const secondUrl = preferred === "dev" ? prodUrl : devUrl;
-
-    return { preferred, qs, devUrl, prodUrl, firstUrl, secondUrl };
-  }, []);
+  const [qs, setQs] = useState<string>("");
 
   useEffect(() => {
-    // Try the preferred scheme first, then fallback to the other.
-    // Safari may block auto-redirect sometimes; we also provide a manual button below.
-    setAttempted(true);
+    const query = buildQueryFromUrl(window.location.href);
+    setQs(query);
 
-    // Use location.href (not replace) so the user can back out if needed.
-    window.location.href = firstUrl;
+    // Try DEV first, then PROD fallback
+    const dev = `shiftedclean-dev://auth/callback${query ? `?${query}` : ""}`;
+    const prod = `shiftedclean://auth/callback${query ? `?${query}` : ""}`;
 
-    const t = window.setTimeout(() => {
-      window.location.href = secondUrl;
-    }, 900);
+    // Attempt dev scheme first
+    window.location.replace(dev);
 
-    return () => window.clearTimeout(t);
-  }, [firstUrl, secondUrl]);
+    // Fallback to prod shortly after (if dev not installed)
+    const t = setTimeout(() => {
+      window.location.replace(prod);
+    }, 700);
+
+    return () => clearTimeout(t);
+  }, []);
+
+  const devHref = useMemo(
+    () => `shiftedclean-dev://auth/callback${qs ? `?${qs}` : ""}`,
+    [qs],
+  );
+  const prodHref = useMemo(
+    () => `shiftedclean://auth/callback${qs ? `?${qs}` : ""}`,
+    [qs],
+  );
 
   return (
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
       <h2>Opening Shifted…</h2>
-
       <p style={{ marginTop: 8 }}>
-        If nothing happens, tap the button below. (Sometimes iOS blocks automatic
-        opening.)
+        If nothing happens, tap a button below. (Sometimes iOS blocks automatic opening.)
       </p>
 
       <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
+        {/* IMPORTANT: These MUST include the query string */}
         <a
-          href={firstUrl}
+          href={prodHref}
           style={{
             display: "inline-block",
             padding: "10px 14px",
@@ -89,11 +69,11 @@ export default function AuthCallbackBridge() {
             textDecoration: "none",
           }}
         >
-          Open {preferred === "dev" ? "Shifted Dev" : "Shifted"}
+          Open Shifted
         </a>
 
         <a
-          href={secondUrl}
+          href={devHref}
           style={{
             display: "inline-block",
             padding: "10px 14px",
@@ -102,16 +82,13 @@ export default function AuthCallbackBridge() {
             textDecoration: "none",
           }}
         >
-          Try the other app
+          Open Shifted Dev
         </a>
       </div>
 
-      {!attempted ? null : (
-        <p style={{ marginTop: 14, opacity: 0.75 }}>
-          If you don’t have the app installed, install it and then return to this
-          email and tap the link again.
-        </p>
-      )}
+      <p style={{ marginTop: 14, color: "#666", fontSize: 12, wordBreak: "break-all" }}>
+        Debug: {qs ? `?${qs}` : "(no tokens detected in URL)"}
+      </p>
     </main>
   );
 }
