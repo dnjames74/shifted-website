@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 
-function buildQueryFromUrl(href: string) {
-  // Combine BOTH ?query and #hash into one query string
+function buildPayloadFromHref(href: string) {
   const url = new URL(href);
 
+  // merge query + hash into one querystring
   const combined = new URLSearchParams(url.searchParams);
 
   const hash = (url.hash || "").replace(/^#/, "");
@@ -16,51 +16,58 @@ function buildQueryFromUrl(href: string) {
     });
   }
 
-  return combined.toString();
+  return combined.toString(); // "type=recovery&code=...&access_token=..."
+}
+
+function getPreferredApp(href: string): "dev" | "prod" | "auto" {
+  try {
+    const url = new URL(href);
+    const app = url.searchParams.get("app");
+    if (app === "dev") return "dev";
+    if (app === "prod") return "prod";
+    return "auto";
+  } catch {
+    return "auto";
+  }
 }
 
 export default function AuthCallbackBridge() {
-  const [qs, setQs] = useState<string>("");
+  const href = typeof window !== "undefined" ? window.location.href : "";
+  const qs = useMemo(() => buildPayloadFromHref(href), [href]);
+  const preferred = useMemo(() => getPreferredApp(href), [href]);
+
+  const devUrl = `shiftedclean-dev://auth/callback${qs ? `?${qs}` : ""}`;
+  const prodUrl = `shiftedclean://auth/callback${qs ? `?${qs}` : ""}`;
 
   useEffect(() => {
-    const query = buildQueryFromUrl(window.location.href);
-    setQs(query);
+    // Prefer what the link says (app=dev or app=prod). If not specified, try dev then prod.
+    const first =
+      preferred === "dev" ? devUrl : preferred === "prod" ? prodUrl : devUrl;
+    const second =
+      preferred === "dev" ? prodUrl : preferred === "prod" ? devUrl : prodUrl;
 
-    // Try DEV first, then PROD fallback
-    const dev = `shiftedclean-dev://auth/callback${query ? `?${query}` : ""}`;
-    const prod = `shiftedclean://auth/callback${query ? `?${query}` : ""}`;
+    // Attempt automatic open
+    window.location.replace(first);
 
-    // Attempt dev scheme first
-    window.location.replace(dev);
-
-    // Fallback to prod shortly after (if dev not installed)
+    // Fallback shortly after (if app not installed or iOS blocks auto-open)
     const t = setTimeout(() => {
-      window.location.replace(prod);
-    }, 700);
+      window.location.replace(second);
+    }, 800);
 
     return () => clearTimeout(t);
-  }, []);
-
-  const devHref = useMemo(
-    () => `shiftedclean-dev://auth/callback${qs ? `?${qs}` : ""}`,
-    [qs],
-  );
-  const prodHref = useMemo(
-    () => `shiftedclean://auth/callback${qs ? `?${qs}` : ""}`,
-    [qs],
-  );
+  }, [devUrl, prodUrl, preferred]);
 
   return (
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
       <h2>Opening Shifted…</h2>
       <p style={{ marginTop: 8 }}>
-        If nothing happens, tap a button below. (Sometimes iOS blocks automatic opening.)
+        If this hangs, tap the button below. (Sometimes iOS blocks automatic opening.)
       </p>
 
       <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        {/* IMPORTANT: These MUST include the query string */}
+        {/* IMPORTANT: Buttons MUST include the payload */}
         <a
-          href={prodHref}
+          href={preferred === "dev" ? devUrl : prodUrl}
           style={{
             display: "inline-block",
             padding: "10px 14px",
@@ -73,7 +80,7 @@ export default function AuthCallbackBridge() {
         </a>
 
         <a
-          href={devHref}
+          href={preferred === "dev" ? prodUrl : devUrl}
           style={{
             display: "inline-block",
             padding: "10px 14px",
@@ -82,12 +89,12 @@ export default function AuthCallbackBridge() {
             textDecoration: "none",
           }}
         >
-          Open Shifted Dev
+          Try the other app
         </a>
       </div>
 
-      <p style={{ marginTop: 14, color: "#666", fontSize: 12, wordBreak: "break-all" }}>
-        Debug: {qs ? `?${qs}` : "(no tokens detected in URL)"}
+      <p style={{ marginTop: 14, opacity: 0.7, fontSize: 12 }}>
+        (Debug) {qs ? "Payload detected ✅" : "No payload detected ❌"}
       </p>
     </main>
   );
