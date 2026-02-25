@@ -4,11 +4,11 @@
     "details": [
       {
         "appID": "W4XCD9N869.com.shifteddating.app",
-        "paths": ["/open", "/open/*", "/auth/callback", "/auth/callback/*"]
+        "paths": ["/open", "/open/*"]
       },
       {
         "appID": "W4XCD9N869.com.shifteddating.app.dev",
-        "paths": ["/open", "/open/*", "/auth/callback", "/auth/callback/*"]
+        "paths": ["/open", "/open/*"]
       }
     ]
   }
