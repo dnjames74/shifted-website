@@ -5,17 +5,28 @@ import { useEffect, useState } from "react";
 
 export const dynamic = "force-dynamic";
 
-function parseAllParams(href: string) {
+function parse(href: string) {
   const url = new URL(href);
 
   const query = new URLSearchParams(url.searchParams);
-  const hashRaw = (url.hash || "").replace(/^#/, "");
-  const hash = new URLSearchParams(hashRaw);
+  const rawHash = (url.hash || "").replace(/^#/, "");
+  const hash = new URLSearchParams(rawHash);
 
-  // Merge hash into query-like access
-  const get = (k: string) => query.get(k) ?? hash.get(k);
+  const q = (k: string) => query.get(k);
+  const h = (k: string) => hash.get(k);
 
-  // Collect keys for debugging
+  // ✅ Tokens come from HASH in Supabase implicit flow.
+  const access_token = h("access_token") ?? q("access_token");
+  const refresh_token = h("refresh_token") ?? q("refresh_token");
+
+  // ✅ Other fields can come from either
+  const type = q("type") ?? h("type") ?? "recovery";
+  const app = q("app") ?? h("app") ?? "prod";
+
+  const code = q("code") ?? h("code");
+  const error = q("error") ?? h("error");
+  const error_description = q("error_description") ?? h("error_description");
+
   const queryKeys: string[] = [];
   query.forEach((_, k) => queryKeys.push(k));
 
@@ -23,23 +34,24 @@ function parseAllParams(href: string) {
   hash.forEach((_, k) => hashKeys.push(k));
 
   return {
-    query,
-    hash,
+    type,
+    app,
+    code,
+    error,
+    error_description,
+
+    // tokens
+    access_token,
+    refresh_token,
+
+    // debugging
     queryKeys,
     hashKeys,
-    rawHash: hashRaw,
-    // common fields
-    type: get("type"),
-    app: get("app"),
-    error: get("error"),
-    error_description: get("error_description"),
-    access_token: get("access_token"),
-    refresh_token:
-      get("refresh_token") ??
-      get("refreshToken") ??
-      get("refresh") ??
-      get("rt"),
-    code: get("code"),
+    rawHashLen: rawHash.length,
+    hashAccessLen: h("access_token")?.length ?? 0,
+    hashRefreshLen: h("refresh_token")?.length ?? 0,
+    queryAccessLen: q("access_token")?.length ?? 0,
+    queryRefreshLen: q("refresh_token")?.length ?? 0,
   };
 }
 
@@ -54,22 +66,22 @@ export default function AuthCallbackBridgePage() {
       try {
         if (typeof window === "undefined") return;
 
-        // Give Safari a moment to populate location.hash reliably
+        // Give Safari a moment to populate hash reliably
         await new Promise((r) => setTimeout(r, 150));
 
-        const p = parseAllParams(window.location.href);
+        const p = parse(window.location.href);
 
-        // Keep app/type parameters from query
-        const app = p.app || "prod";
-        const typeQ = p.type || "recovery";
-
-        // Console diagnostics (view in Safari devtools if needed)
+        // Helpful diagnostics (viewable in Safari devtools)
         console.log("[auth/callback] query keys:", p.queryKeys);
         console.log("[auth/callback] hash keys:", p.hashKeys);
-        console.log("[auth/callback] raw hash len:", p.rawHash.length);
-        console.log("[auth/callback] token lens:", {
-          accessLen: p.access_token?.length ?? 0,
-          refreshLen: p.refresh_token?.length ?? 0,
+        console.log("[auth/callback] rawHashLen:", p.rawHashLen);
+        console.log("[auth/callback] lens:", {
+          hashAccess: p.hashAccessLen,
+          hashRefresh: p.hashRefreshLen,
+          queryAccess: p.queryAccessLen,
+          queryRefresh: p.queryRefreshLen,
+          chosenAccess: p.access_token?.length ?? 0,
+          chosenRefresh: p.refresh_token?.length ?? 0,
           codeLen: p.code?.length ?? 0,
         });
 
@@ -79,8 +91,33 @@ export default function AuthCallbackBridgePage() {
           return;
         }
 
-        // Preferred: tokens present
+        // ✅ If token pair exists, validate before storing
         if (p.access_token && p.refresh_token) {
+          const refreshLen = p.refresh_token.length;
+
+          // Supabase refresh tokens should NOT be ~12 chars.
+          // Fail fast so we don’t store garbage and hang the app.
+          if (refreshLen < 40) {
+            // If Supabase provided a code, use that instead.
+            if (p.code) {
+              const openUrl = `https://www.shifteddating.com/open?type=${encodeURIComponent(
+                p.type,
+              )}&app=${encodeURIComponent(p.app)}&code=${encodeURIComponent(
+                p.code,
+              )}`;
+
+              setMsg("Opening Shifted…");
+              window.location.replace(openUrl);
+              return;
+            }
+
+            setMsg("Reset link missing a valid refresh token.");
+            setDetails(
+              `Got refresh_token length ${refreshLen}. Please request a new reset email and try again in Safari.`,
+            );
+            return;
+          }
+
           setMsg("Securing your reset link…");
 
           const res = await fetch("/api/recovery-bridge", {
@@ -100,29 +137,29 @@ export default function AuthCallbackBridgePage() {
           }
 
           const rid = json.rid as string;
-
           const openUrl = `https://www.shifteddating.com/open?type=${encodeURIComponent(
-            typeQ
-          )}&app=${encodeURIComponent(app)}&rid=${encodeURIComponent(rid)}`;
+            p.type,
+          )}&app=${encodeURIComponent(p.app)}&rid=${encodeURIComponent(rid)}`;
 
           setMsg("Opening Shifted…");
           window.location.replace(openUrl);
           return;
         }
 
-        // Fallback: code flow (if Supabase provides it)
+        // ✅ Code fallback (PKCE)
         if (p.code) {
-          setMsg("Opening Shifted…");
           const openUrl = `https://www.shifteddating.com/open?type=${encodeURIComponent(
-            typeQ
-          )}&app=${encodeURIComponent(app)}&code=${encodeURIComponent(p.code)}`;
+            p.type,
+          )}&app=${encodeURIComponent(p.app)}&code=${encodeURIComponent(p.code)}`;
+
+          setMsg("Opening Shifted…");
           window.location.replace(openUrl);
           return;
         }
 
         setMsg("Missing tokens in reset link.");
         setDetails(
-          "We didn’t receive a refresh token. Please go back to the email and tap the reset link again (in Safari)."
+          "Please go back to the email and tap the reset link again (in Safari).",
         );
       } catch (e: any) {
         if (cancelled) return;
@@ -132,7 +169,6 @@ export default function AuthCallbackBridgePage() {
     };
 
     run();
-
     return () => {
       cancelled = true;
     };
