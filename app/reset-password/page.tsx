@@ -131,11 +131,11 @@ export default function WebResetPasswordPage() {
       >
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <img
-            src="/shifted-logo.png"
-            alt="Shifted"
-            style={{ width: 44, height: 44, borderRadius: 12 }}
-          />
+<img
+  src="/logo.png"
+  alt="Shifted"
+  style={{ width: 44, height: 44, borderRadius: 12 }}
+/>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: 0.2 }}>
               Shifted
