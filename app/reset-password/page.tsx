@@ -14,7 +14,7 @@ export default function WebResetPasswordPage() {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
-        detectSessionInUrl: true, // ✅ reads tokens from URL fragment
+        detectSessionInUrl: true,
       },
     });
   }, []);
@@ -33,17 +33,14 @@ export default function WebResetPasswordPage() {
 
     (async () => {
       try {
-        // Give Supabase a moment to parse URL fragment
         await new Promise((r) => setTimeout(r, 80));
-
         const { data, error } = await supabase.auth.getSession();
         if (error) throw error;
 
-        const has = !!data?.session;
-        if (!has) {
+        if (!data?.session) {
           setStatus("error");
           setMsg(
-            "Reset link is missing a valid session. Please request a new reset email and open it in Safari.",
+            "Reset link is missing a valid session. Please request a new reset email and open it in your browser.",
           );
           setReady(false);
           return;
@@ -70,7 +67,6 @@ export default function WebResetPasswordPage() {
   }, [supabase]);
 
   const redirectToApp = () => {
-    // ✅ Universal Link -> app opens if installed
     window.location.href = "https://www.shifteddating.com/open?next=discover";
   };
 
@@ -91,7 +87,6 @@ export default function WebResetPasswordPage() {
       setStatus("done");
       setMsg("Password updated ✅");
 
-      // Give the user a tiny beat to see success, then open app.
       setTimeout(() => {
         redirectToApp();
       }, 600);
@@ -115,7 +110,8 @@ export default function WebResetPasswordPage() {
           "radial-gradient(1000px 600px at 80% 0%, rgba(0,255,136,0.06), transparent 55%)," +
           "#05070A",
         color: "white",
-        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+        fontFamily:
+          "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
       }}
     >
       <div
@@ -129,18 +125,37 @@ export default function WebResetPasswordPage() {
           padding: 18,
         }}
       >
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-<img
-  src="/logo.png"
-  alt="Shifted"
-  style={{ width: 44, height: 44, borderRadius: 12 }}
-/>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: 0.2 }}>
+        {/* Header (logo no longer squished) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <img
+            src="/logo.png"
+            alt="Shifted"
+            style={{
+              height: 36, // ✅ fixed height
+              width: "auto", // ✅ preserves aspect ratio (no squish)
+              display: "block",
+            }}
+          />
+
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 800,
+                letterSpacing: 0.2,
+                lineHeight: 1.15,
+              }}
+            >
               Shifted
             </div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.70)" }}>
+            <div
+              style={{
+                fontSize: 13,
+                color: "rgba(255,255,255,0.70)",
+                lineHeight: 1.15,
+                marginTop: 2,
+              }}
+            >
               Password reset
             </div>
           </div>
@@ -153,7 +168,7 @@ export default function WebResetPasswordPage() {
           {!ready ? (
             <p style={{ marginTop: 10, color: "rgba(255,255,255,0.70)" }}>
               If you’re stuck here, request a new reset email and open it in
-              Safari.
+              your browser.
             </p>
           ) : (
             <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
@@ -223,8 +238,15 @@ export default function WebResetPasswordPage() {
               </button>
 
               <div style={{ marginTop: 6 }}>
-                <p style={{ margin: 0, color: "rgba(255,255,255,0.65)", fontSize: 13 }}>
-                  After saving, we’ll open the app. If it doesn’t open, tap below.
+                <p
+                  style={{
+                    margin: 0,
+                    color: "rgba(255,255,255,0.65)",
+                    fontSize: 13,
+                  }}
+                >
+                  After saving, we’ll open the app. If your browser blocks
+                  auto-opening, tap below.
                 </p>
 
                 <button
@@ -248,7 +270,7 @@ export default function WebResetPasswordPage() {
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer (generic note) */}
         <div
           style={{
             marginTop: 16,
@@ -258,7 +280,7 @@ export default function WebResetPasswordPage() {
             fontSize: 12,
           }}
         >
-          Tip: If Safari blocks auto-opening, use the “Open Shifted” button.
+          If your browser blocks auto-opening, use the “Open Shifted” button.
         </div>
       </div>
     </main>
