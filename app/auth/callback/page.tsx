@@ -1,75 +1,108 @@
+// app/auth/callback/page.tsx
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
-// ✅ prevent prerender/build-time execution
 export const dynamic = "force-dynamic";
 
-function buildParamsFromUrl(href: string) {
-  // Combine BOTH ?query and #hash into one URLSearchParams
-  const url = new URL(href);
-  const combined = new URLSearchParams(url.searchParams);
+function getHashParams() {
+  const hash = (window.location.hash || "").replace(/^#/, "");
+  const p = new URLSearchParams(hash);
 
-  // Supabase puts tokens in the fragment: #access_token=...&refresh_token=...
-  const hash = (url.hash || "").replace(/^#/, "");
-  if (hash) {
-    const hashParams = new URLSearchParams(hash);
-    hashParams.forEach((value, key) => {
-      // hash wins if duplicated (safer for tokens)
-      combined.set(key, value);
-    });
-  }
-
-  return combined;
+  return {
+    access_token: p.get("access_token"),
+    refresh_token: p.get("refresh_token"),
+    type: p.get("type"),
+    error: p.get("error"),
+    error_description: p.get("error_description"),
+  };
 }
 
-export default function AuthCallbackBridge() {
+export default function AuthCallbackBridgePage() {
+  const [msg, setMsg] = useState("Almost there…");
+  const [details, setDetails] = useState<string | null>(null);
+
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    let cancelled = false;
 
-    const params = buildParamsFromUrl(window.location.href);
+    const run = async () => {
+      try {
+        if (typeof window === "undefined") return;
 
-    // Ensure we always carry these through (you already pass them)
-    // type=recovery, app=dev|prod
-    const type = params.get("type");
-    const app = params.get("app");
+        // Keep your existing query params (app=prod/dev, type=recovery, etc.)
+        const qs = new URLSearchParams(window.location.search);
+        const app = qs.get("app") || "prod";
+        const typeQ = qs.get("type") || "recovery";
 
-    // Build the Universal Link target (ONLY /open is in AASA now)
-    const openUrl = new URL("https://www.shifteddating.com/open");
+        // Hash usually contains the real tokens
+        const hp = getHashParams();
 
-    // Copy all params through to /open so the app can read them from querystring
-    params.forEach((value, key) => {
-      openUrl.searchParams.set(key, value);
-    });
+        if (hp.error) {
+          setMsg("Couldn’t open the reset link.");
+          setDetails(hp.error_description ?? hp.error);
+          return;
+        }
 
-    // If you want extra safety, you can enforce the app/type params exist:
-    if (!type) openUrl.searchParams.set("type", "recovery");
-    if (!app) openUrl.searchParams.set("app", "prod");
+        if (!hp.access_token || !hp.refresh_token) {
+          setMsg("Missing tokens in reset link.");
+          setDetails(
+            "Go back to the email and tap the reset link again (in Safari)."
+          );
+          return;
+        }
 
-    window.location.replace(openUrl.toString());
+        setMsg("Securing your reset link…");
+
+        // POST tokens to server to get a short rid
+        const res = await fetch("/api/recovery-bridge", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            access_token: hp.access_token,
+            refresh_token: hp.refresh_token,
+          }),
+        });
+
+        const json = await res.json().catch(() => ({} as any));
+        if (!res.ok || !json?.rid) {
+          setMsg("Couldn’t prepare password reset.");
+          setDetails(json?.error ?? "Server error");
+          return;
+        }
+
+        const rid = json.rid as string;
+
+        // Redirect to /open with a short rid (NO TOKENS IN URL)
+        const openUrl = `https://www.shifteddating.com/open?type=${encodeURIComponent(
+          typeQ
+        )}&app=${encodeURIComponent(app)}&rid=${encodeURIComponent(rid)}`;
+
+        setMsg("Opening Shifted…");
+        window.location.replace(openUrl);
+      } catch (e: any) {
+        if (cancelled) return;
+        setMsg("Couldn’t prepare password reset.");
+        setDetails(e?.message ?? "Please try again.");
+      }
+    };
+
+    // Small delay helps Safari fully populate location.hash before we read it
+    const t = setTimeout(run, 50);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, []);
 
   return (
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
-      <h2>Almost there…</h2>
-      <p style={{ marginTop: 8 }}>
-        Finishing securely. If nothing happens, tap the button below.
-      </p>
+      <h2>{msg}</h2>
+      {details ? <p style={{ marginTop: 8 }}>{details}</p> : null}
 
-      <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <a
-          href="https://www.shifteddating.com/open"
-          style={{
-            display: "inline-block",
-            padding: "10px 14px",
-            borderRadius: 999,
-            border: "1px solid #ccc",
-            textDecoration: "none",
-          }}
-        >
-          Open Shifted
-        </a>
-      </div>
+      <p style={{ marginTop: 12, opacity: 0.8 }}>
+        If iOS shows an “Open” banner at the top, tap it.
+      </p>
     </main>
   );
 }
