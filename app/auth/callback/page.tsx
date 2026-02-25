@@ -1,81 +1,55 @@
-// shifted-website/app/auth/callback/page.tsx
-export const dynamic = "force-dynamic"; // ✅ prevent prerender/build-time execution
-
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect } from "react";
 
-function safeBuildQueryFromHref(href: string | null | undefined) {
-  if (!href) return "";
+// ✅ prevent prerender/build-time execution
+export const dynamic = "force-dynamic";
 
-  try {
-    // Turn BOTH ?query and #hash into one query string
-    const url = new URL(href);
+function buildQueryFromUrl(href: string) {
+  // Turn BOTH ?query and #hash into one query string
+  const url = new URL(href);
+  const combined = new URLSearchParams(url.searchParams);
 
-    const combined = new URLSearchParams(url.searchParams);
-
-    // Hash can be like: #access_token=...&refresh_token=...&type=recovery
-    const hash = (url.hash || "").replace(/^#/, "");
-    if (hash) {
-      const hashParams = new URLSearchParams(hash);
-      hashParams.forEach((value, key) => {
-        if (!combined.has(key)) combined.set(key, value);
-      });
-    }
-
-    return combined.toString();
-  } catch {
-    return "";
+  // Hash can be like: #access_token=...&refresh_token=...&type=recovery
+  const hash = (url.hash || "").replace(/^#/, "");
+  if (hash) {
+    const hashParams = new URLSearchParams(hash);
+    hashParams.forEach((value, key) => {
+      if (!combined.has(key)) combined.set(key, value);
+    });
   }
-}
 
-type AppPref = "dev" | "prod" | null;
-
-function readAppPrefFromQuery(qs: string): AppPref {
-  try {
-    const p = new URLSearchParams(qs);
-    const app = p.get("app");
-    if (app === "dev") return "dev";
-    if (app === "prod") return "prod";
-    return null;
-  } catch {
-    return null;
-  }
+  return combined.toString();
 }
 
 export default function AuthCallbackBridge() {
-  // ✅ Default links (SSR-safe). We update them after mount if tokens exist.
-  const [links, setLinks] = useState(() => ({
-    prod: "shiftedclean://auth/callback",
-    dev: "shiftedclean-dev://auth/callback",
-  }));
-
-  const [hint, setHint] = useState<string | null>(null);
-
   useEffect(() => {
-    // ✅ Browser-only
-    const href = typeof window !== "undefined" ? window.location.href : "";
-    const qs = safeBuildQueryFromHref(href);
+    // ✅ guard for safety (should always exist in client)
+    if (typeof window === "undefined") return;
 
-    const prod = `shiftedclean://auth/callback${qs ? `?${qs}` : ""}`;
+    const qs = buildQueryFromUrl(window.location.href);
+
+    // If you pass app=dev or app=prod in redirect_to, respect it.
+    const appParam = new URLSearchParams(window.location.search).get("app");
+    const prefer: "dev" | "prod" | "auto" =
+      appParam === "dev" ? "dev" : appParam === "prod" ? "prod" : "auto";
+
     const dev = `shiftedclean-dev://auth/callback${qs ? `?${qs}` : ""}`;
+    const prod = `shiftedclean://auth/callback${qs ? `?${qs}` : ""}`;
 
-    setLinks({ prod, dev });
+    // Auto: try dev first, then prod fallback.
+    if (prefer === "dev") {
+      window.location.replace(dev);
+      return;
+    }
+    if (prefer === "prod") {
+      window.location.replace(prod);
+      return;
+    }
 
-    // Respect ?app=dev or ?app=prod if you pass it in redirect_to
-    const pref = readAppPrefFromQuery(qs);
-
-    // Try to open immediately (sometimes iOS blocks auto-open)
-    const first = pref === "prod" ? prod : pref === "dev" ? dev : dev; // default: dev first
-    const second = pref === "prod" ? dev : prod; // fallback
-
-    // Attempt #1
-    window.location.replace(first);
-
-    // Fallback to the other app shortly after (if not installed / blocked)
+    window.location.replace(dev);
     const t = setTimeout(() => {
-      window.location.replace(second);
-      setHint("If nothing happens, tap one of the buttons below (iOS sometimes blocks automatic opening).");
+      window.location.replace(prod);
     }, 700);
 
     return () => clearTimeout(t);
@@ -85,16 +59,12 @@ export default function AuthCallbackBridge() {
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
       <h2>Opening Shifted…</h2>
       <p style={{ marginTop: 8 }}>
-        If nothing happens, tap one of the buttons below.
+        If nothing happens, tap the button below. (Sometimes iOS blocks automatic opening.)
       </p>
-
-      {hint ? (
-        <p style={{ marginTop: 8, opacity: 0.8 }}>{hint}</p>
-      ) : null}
 
       <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
         <a
-          href={links.prod}
+          href="shiftedclean://auth/callback"
           style={{
             display: "inline-block",
             padding: "10px 14px",
@@ -107,7 +77,7 @@ export default function AuthCallbackBridge() {
         </a>
 
         <a
-          href={links.dev}
+          href="shiftedclean-dev://auth/callback"
           style={{
             display: "inline-block",
             padding: "10px 14px",
@@ -116,7 +86,7 @@ export default function AuthCallbackBridge() {
             textDecoration: "none",
           }}
         >
-          Try Shifted Dev
+          Try the other app
         </a>
       </div>
     </main>
