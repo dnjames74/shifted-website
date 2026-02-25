@@ -5,16 +5,41 @@ import { useEffect, useState } from "react";
 
 export const dynamic = "force-dynamic";
 
-function getHashParams() {
-  const hash = (window.location.hash || "").replace(/^#/, "");
-  const p = new URLSearchParams(hash);
+function parseAllParams(href: string) {
+  const url = new URL(href);
+
+  const query = new URLSearchParams(url.searchParams);
+  const hashRaw = (url.hash || "").replace(/^#/, "");
+  const hash = new URLSearchParams(hashRaw);
+
+  // Merge hash into query-like access
+  const get = (k: string) => query.get(k) ?? hash.get(k);
+
+  // Collect keys for debugging
+  const queryKeys: string[] = [];
+  query.forEach((_, k) => queryKeys.push(k));
+
+  const hashKeys: string[] = [];
+  hash.forEach((_, k) => hashKeys.push(k));
 
   return {
-    access_token: p.get("access_token"),
-    refresh_token: p.get("refresh_token"),
-    type: p.get("type"),
-    error: p.get("error"),
-    error_description: p.get("error_description"),
+    query,
+    hash,
+    queryKeys,
+    hashKeys,
+    rawHash: hashRaw,
+    // common fields
+    type: get("type"),
+    app: get("app"),
+    error: get("error"),
+    error_description: get("error_description"),
+    access_token: get("access_token"),
+    refresh_token:
+      get("refresh_token") ??
+      get("refreshToken") ??
+      get("refresh") ??
+      get("rt"),
+    code: get("code"),
   };
 }
 
@@ -29,56 +54,76 @@ export default function AuthCallbackBridgePage() {
       try {
         if (typeof window === "undefined") return;
 
-        // Keep your existing query params (app=prod/dev, type=recovery, etc.)
-        const qs = new URLSearchParams(window.location.search);
-        const app = qs.get("app") || "prod";
-        const typeQ = qs.get("type") || "recovery";
+        // Give Safari a moment to populate location.hash reliably
+        await new Promise((r) => setTimeout(r, 150));
 
-        // Hash usually contains the real tokens
-        const hp = getHashParams();
+        const p = parseAllParams(window.location.href);
 
-        if (hp.error) {
-          setMsg("Couldn’t open the reset link.");
-          setDetails(hp.error_description ?? hp.error);
-          return;
-        }
+        // Keep app/type parameters from query
+        const app = p.app || "prod";
+        const typeQ = p.type || "recovery";
 
-        if (!hp.access_token || !hp.refresh_token) {
-          setMsg("Missing tokens in reset link.");
-          setDetails(
-            "Go back to the email and tap the reset link again (in Safari)."
-          );
-          return;
-        }
-
-        setMsg("Securing your reset link…");
-
-        // POST tokens to server to get a short rid
-        const res = await fetch("/api/recovery-bridge", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            access_token: hp.access_token,
-            refresh_token: hp.refresh_token,
-          }),
+        // Console diagnostics (view in Safari devtools if needed)
+        console.log("[auth/callback] query keys:", p.queryKeys);
+        console.log("[auth/callback] hash keys:", p.hashKeys);
+        console.log("[auth/callback] raw hash len:", p.rawHash.length);
+        console.log("[auth/callback] token lens:", {
+          accessLen: p.access_token?.length ?? 0,
+          refreshLen: p.refresh_token?.length ?? 0,
+          codeLen: p.code?.length ?? 0,
         });
 
-        const json = await res.json().catch(() => ({} as any));
-        if (!res.ok || !json?.rid) {
-          setMsg("Couldn’t prepare password reset.");
-          setDetails(json?.error ?? "Server error");
+        if (p.error) {
+          setMsg("Couldn’t open the reset link.");
+          setDetails(p.error_description ?? p.error);
           return;
         }
 
-        const rid = json.rid as string;
+        // Preferred: tokens present
+        if (p.access_token && p.refresh_token) {
+          setMsg("Securing your reset link…");
 
-        // Redirect to /open with a short rid (NO TOKENS IN URL)
-        const openUrl = `https://www.shifteddating.com/open?type=${encodeURIComponent(
-          typeQ
-        )}&app=${encodeURIComponent(app)}&rid=${encodeURIComponent(rid)}`;
+          const res = await fetch("/api/recovery-bridge", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              access_token: p.access_token,
+              refresh_token: p.refresh_token,
+            }),
+          });
 
-        setMsg("Opening Shifted…");
-        window.location.replace(openUrl);
+          const json = await res.json().catch(() => ({} as any));
+          if (!res.ok || !json?.rid) {
+            setMsg("Couldn’t prepare password reset.");
+            setDetails(json?.error ?? "Server error");
+            return;
+          }
+
+          const rid = json.rid as string;
+
+          const openUrl = `https://www.shifteddating.com/open?type=${encodeURIComponent(
+            typeQ
+          )}&app=${encodeURIComponent(app)}&rid=${encodeURIComponent(rid)}`;
+
+          setMsg("Opening Shifted…");
+          window.location.replace(openUrl);
+          return;
+        }
+
+        // Fallback: code flow (if Supabase provides it)
+        if (p.code) {
+          setMsg("Opening Shifted…");
+          const openUrl = `https://www.shifteddating.com/open?type=${encodeURIComponent(
+            typeQ
+          )}&app=${encodeURIComponent(app)}&code=${encodeURIComponent(p.code)}`;
+          window.location.replace(openUrl);
+          return;
+        }
+
+        setMsg("Missing tokens in reset link.");
+        setDetails(
+          "We didn’t receive a refresh token. Please go back to the email and tap the reset link again (in Safari)."
+        );
       } catch (e: any) {
         if (cancelled) return;
         setMsg("Couldn’t prepare password reset.");
@@ -86,12 +131,10 @@ export default function AuthCallbackBridgePage() {
       }
     };
 
-    // Small delay helps Safari fully populate location.hash before we read it
-    const t = setTimeout(run, 50);
+    run();
 
     return () => {
       cancelled = true;
-      clearTimeout(t);
     };
   }, []);
 
@@ -99,7 +142,6 @@ export default function AuthCallbackBridgePage() {
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
       <h2>{msg}</h2>
       {details ? <p style={{ marginTop: 8 }}>{details}</p> : null}
-
       <p style={{ marginTop: 12, opacity: 0.8 }}>
         If iOS shows an “Open” banner at the top, tap it.
       </p>
