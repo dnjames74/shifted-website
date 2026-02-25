@@ -1,73 +1,100 @@
+// shifted-website/app/auth/callback/page.tsx
+export const dynamic = "force-dynamic"; // ✅ prevent prerender/build-time execution
+
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-function buildPayloadFromHref(href: string) {
-  const url = new URL(href);
+function safeBuildQueryFromHref(href: string | null | undefined) {
+  if (!href) return "";
 
-  // merge query + hash into one querystring
-  const combined = new URLSearchParams(url.searchParams);
+  try {
+    // Turn BOTH ?query and #hash into one query string
+    const url = new URL(href);
 
-  const hash = (url.hash || "").replace(/^#/, "");
-  if (hash) {
-    const hashParams = new URLSearchParams(hash);
-    hashParams.forEach((value, key) => {
-      if (!combined.has(key)) combined.set(key, value);
-    });
+    const combined = new URLSearchParams(url.searchParams);
+
+    // Hash can be like: #access_token=...&refresh_token=...&type=recovery
+    const hash = (url.hash || "").replace(/^#/, "");
+    if (hash) {
+      const hashParams = new URLSearchParams(hash);
+      hashParams.forEach((value, key) => {
+        if (!combined.has(key)) combined.set(key, value);
+      });
+    }
+
+    return combined.toString();
+  } catch {
+    return "";
   }
-
-  return combined.toString(); // "type=recovery&code=...&access_token=..."
 }
 
-function getPreferredApp(href: string): "dev" | "prod" | "auto" {
+type AppPref = "dev" | "prod" | null;
+
+function readAppPrefFromQuery(qs: string): AppPref {
   try {
-    const url = new URL(href);
-    const app = url.searchParams.get("app");
+    const p = new URLSearchParams(qs);
+    const app = p.get("app");
     if (app === "dev") return "dev";
     if (app === "prod") return "prod";
-    return "auto";
+    return null;
   } catch {
-    return "auto";
+    return null;
   }
 }
 
 export default function AuthCallbackBridge() {
-  const href = typeof window !== "undefined" ? window.location.href : "";
-  const qs = useMemo(() => buildPayloadFromHref(href), [href]);
-  const preferred = useMemo(() => getPreferredApp(href), [href]);
+  // ✅ Default links (SSR-safe). We update them after mount if tokens exist.
+  const [links, setLinks] = useState(() => ({
+    prod: "shiftedclean://auth/callback",
+    dev: "shiftedclean-dev://auth/callback",
+  }));
 
-  const devUrl = `shiftedclean-dev://auth/callback${qs ? `?${qs}` : ""}`;
-  const prodUrl = `shiftedclean://auth/callback${qs ? `?${qs}` : ""}`;
+  const [hint, setHint] = useState<string | null>(null);
 
   useEffect(() => {
-    // Prefer what the link says (app=dev or app=prod). If not specified, try dev then prod.
-    const first =
-      preferred === "dev" ? devUrl : preferred === "prod" ? prodUrl : devUrl;
-    const second =
-      preferred === "dev" ? prodUrl : preferred === "prod" ? devUrl : prodUrl;
+    // ✅ Browser-only
+    const href = typeof window !== "undefined" ? window.location.href : "";
+    const qs = safeBuildQueryFromHref(href);
 
-    // Attempt automatic open
+    const prod = `shiftedclean://auth/callback${qs ? `?${qs}` : ""}`;
+    const dev = `shiftedclean-dev://auth/callback${qs ? `?${qs}` : ""}`;
+
+    setLinks({ prod, dev });
+
+    // Respect ?app=dev or ?app=prod if you pass it in redirect_to
+    const pref = readAppPrefFromQuery(qs);
+
+    // Try to open immediately (sometimes iOS blocks auto-open)
+    const first = pref === "prod" ? prod : pref === "dev" ? dev : dev; // default: dev first
+    const second = pref === "prod" ? dev : prod; // fallback
+
+    // Attempt #1
     window.location.replace(first);
 
-    // Fallback shortly after (if app not installed or iOS blocks auto-open)
+    // Fallback to the other app shortly after (if not installed / blocked)
     const t = setTimeout(() => {
       window.location.replace(second);
-    }, 800);
+      setHint("If nothing happens, tap one of the buttons below (iOS sometimes blocks automatic opening).");
+    }, 700);
 
     return () => clearTimeout(t);
-  }, [devUrl, prodUrl, preferred]);
+  }, []);
 
   return (
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
       <h2>Opening Shifted…</h2>
       <p style={{ marginTop: 8 }}>
-        If this hangs, tap the button below. (Sometimes iOS blocks automatic opening.)
+        If nothing happens, tap one of the buttons below.
       </p>
 
+      {hint ? (
+        <p style={{ marginTop: 8, opacity: 0.8 }}>{hint}</p>
+      ) : null}
+
       <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        {/* IMPORTANT: Buttons MUST include the payload */}
         <a
-          href={preferred === "dev" ? devUrl : prodUrl}
+          href={links.prod}
           style={{
             display: "inline-block",
             padding: "10px 14px",
@@ -80,7 +107,7 @@ export default function AuthCallbackBridge() {
         </a>
 
         <a
-          href={preferred === "dev" ? prodUrl : devUrl}
+          href={links.dev}
           style={{
             display: "inline-block",
             padding: "10px 14px",
@@ -89,13 +116,9 @@ export default function AuthCallbackBridge() {
             textDecoration: "none",
           }}
         >
-          Try the other app
+          Try Shifted Dev
         </a>
       </div>
-
-      <p style={{ marginTop: 14, opacity: 0.7, fontSize: 12 }}>
-        (Debug) {qs ? "Payload detected ✅" : "No payload detected ❌"}
-      </p>
     </main>
   );
 }
