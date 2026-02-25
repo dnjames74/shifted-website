@@ -5,66 +5,60 @@ import { useEffect } from "react";
 // ✅ prevent prerender/build-time execution
 export const dynamic = "force-dynamic";
 
-function buildQueryFromUrl(href: string) {
-  // Turn BOTH ?query and #hash into one query string
+function buildParamsFromUrl(href: string) {
+  // Combine BOTH ?query and #hash into one URLSearchParams
   const url = new URL(href);
   const combined = new URLSearchParams(url.searchParams);
 
-  // Hash can be like: #access_token=...&refresh_token=...&type=recovery
+  // Supabase puts tokens in the fragment: #access_token=...&refresh_token=...
   const hash = (url.hash || "").replace(/^#/, "");
   if (hash) {
     const hashParams = new URLSearchParams(hash);
     hashParams.forEach((value, key) => {
-      if (!combined.has(key)) combined.set(key, value);
+      // hash wins if duplicated (safer for tokens)
+      combined.set(key, value);
     });
   }
 
-  return combined.toString();
+  return combined;
 }
 
 export default function AuthCallbackBridge() {
   useEffect(() => {
-    // ✅ guard for safety (should always exist in client)
     if (typeof window === "undefined") return;
 
-    const qs = buildQueryFromUrl(window.location.href);
+    const params = buildParamsFromUrl(window.location.href);
 
-    // If you pass app=dev or app=prod in redirect_to, respect it.
-    const appParam = new URLSearchParams(window.location.search).get("app");
-    const prefer: "dev" | "prod" | "auto" =
-      appParam === "dev" ? "dev" : appParam === "prod" ? "prod" : "auto";
+    // Ensure we always carry these through (you already pass them)
+    // type=recovery, app=dev|prod
+    const type = params.get("type");
+    const app = params.get("app");
 
-    const dev = `shiftedclean-dev://auth/callback${qs ? `?${qs}` : ""}`;
-    const prod = `shiftedclean://auth/callback${qs ? `?${qs}` : ""}`;
+    // Build the Universal Link target (ONLY /open is in AASA now)
+    const openUrl = new URL("https://www.shifteddating.com/open");
 
-    // Auto: try dev first, then prod fallback.
-    if (prefer === "dev") {
-      window.location.replace(dev);
-      return;
-    }
-    if (prefer === "prod") {
-      window.location.replace(prod);
-      return;
-    }
+    // Copy all params through to /open so the app can read them from querystring
+    params.forEach((value, key) => {
+      openUrl.searchParams.set(key, value);
+    });
 
-    window.location.replace(dev);
-    const t = setTimeout(() => {
-      window.location.replace(prod);
-    }, 700);
+    // If you want extra safety, you can enforce the app/type params exist:
+    if (!type) openUrl.searchParams.set("type", "recovery");
+    if (!app) openUrl.searchParams.set("app", "prod");
 
-    return () => clearTimeout(t);
+    window.location.replace(openUrl.toString());
   }, []);
 
   return (
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
-      <h2>Opening Shifted…</h2>
+      <h2>Almost there…</h2>
       <p style={{ marginTop: 8 }}>
-        If nothing happens, tap the button below. (Sometimes iOS blocks automatic opening.)
+        Finishing securely. If nothing happens, tap the button below.
       </p>
 
       <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
         <a
-          href="shiftedclean://auth/callback"
+          href="https://www.shifteddating.com/open"
           style={{
             display: "inline-block",
             padding: "10px 14px",
@@ -74,19 +68,6 @@ export default function AuthCallbackBridge() {
           }}
         >
           Open Shifted
-        </a>
-
-        <a
-          href="shiftedclean-dev://auth/callback"
-          style={{
-            display: "inline-block",
-            padding: "10px 14px",
-            borderRadius: 999,
-            border: "1px solid #ccc",
-            textDecoration: "none",
-          }}
-        >
-          Try the other app
         </a>
       </div>
     </main>
