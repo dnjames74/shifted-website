@@ -32,8 +32,11 @@ export async function POST(req: Request) {
       .select("id")
       .single();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error || !data?.id) {
+      return NextResponse.json(
+        { error: error?.message ?? "insert_failed" },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ rid: data.id });
@@ -67,13 +70,15 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "already_used" }, { status: 410 });
   }
 
-  // Mark used (best effort)
-  admin
-    .from("recovery_bridge")
-    .update({ used_at: new Date().toISOString() })
-    .eq("id", rid)
-    .then(() => {})
-    .catch(() => {});
+  // Mark as used (best-effort). Do not block response on this.
+  try {
+    await admin
+      .from("recovery_bridge")
+      .update({ used_at: new Date().toISOString() })
+      .eq("id", rid);
+  } catch {
+    // ignore
+  }
 
   return NextResponse.json({
     access_token: data.access_token,
