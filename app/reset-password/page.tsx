@@ -126,40 +126,37 @@ export default function WebResetPasswordPage() {
         }}
       >
         {/* Header (logo no longer squished) */}
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <img
-            src="/logo.png"
-            alt="Shifted"
-            style={{
-              height: 36, // ✅ fixed height
-              width: "auto", // ✅ preserves aspect ratio (no squish)
-              display: "block",
-            }}
-          />
+       {/* Header (centered, no duplicate text) */}
+<div
+  style={{
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10,
+  }}
+>
+  <img
+    src="/logo.png"
+    alt="Shifted"
+    style={{
+      height: 44,
+      width: "auto",
+      display: "block",
+    }}
+  />
 
-          <div style={{ minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: 16,
-                fontWeight: 800,
-                letterSpacing: 0.2,
-                lineHeight: 1.15,
-              }}
-            >
-              Shifted
-            </div>
-            <div
-              style={{
-                fontSize: 13,
-                color: "rgba(255,255,255,0.70)",
-                lineHeight: 1.15,
-                marginTop: 2,
-              }}
-            >
-              Password reset
-            </div>
-          </div>
-        </div>
+  <div
+    style={{
+      fontSize: 14,
+      fontWeight: 600,
+      color: "rgba(255,255,255,0.70)",
+      letterSpacing: 0.4,
+    }}
+  >
+    Password reset
+  </div>
+</div>
 
         {/* Body */}
         <div style={{ marginTop: 16 }}>
