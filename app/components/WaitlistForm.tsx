@@ -89,7 +89,6 @@ export default function WaitlistForm() {
   }, [cohortInfo]);
 
   useEffect(() => {
-    // document.referrer is empty on direct visits; that’s fine.
     if (typeof document !== "undefined") {
       const r = (document.referrer || "").trim();
       setReferrer(r ? r : null);
@@ -100,12 +99,13 @@ export default function WaitlistForm() {
     // ✅ Auto-select Toronto if we’re in Toronto cohort mode
     if (typeof window === "undefined") return;
 
-    if (isTorontoCohort && !city) {
-      setCity("Toronto");
+    if (isTorontoCohort) {
+      // force Toronto value so we never end up with "" while select is disabled
+      if (city !== "Toronto") setCity("Toronto");
       return;
     }
 
-    // If user came with ?city=<something>, try to map it to our dropdown
+    // Non-Toronto: if user came with ?city=..., try to map it to our dropdown
     if (!city) {
       const normalized = normalizeCity(cohortInfo.cityHint);
       if (normalized) setCity(normalized);
@@ -122,12 +122,7 @@ export default function WaitlistForm() {
       return;
     }
 
-    // ✅ In Toronto cohort mode, require a city (and default to Toronto anyway)
-    if (isTorontoCohort && !city) {
-      setStatus({ ok: false, msg: "Please select Toronto to join early access." });
-      return;
-    }
-
+    // In Toronto cohort, city will always be Toronto via effect above
     setLoading(true);
 
     try {
@@ -138,13 +133,13 @@ export default function WaitlistForm() {
           email: cleanEmail,
           city: city || null,
           is_shift_worker: isShift,
-          // ✅ Tagging for later filtering in Supabase (no schema change needed if this already exists)
           source: isTorontoCohort ? "landing_toronto" : "landing",
           referrer,
           company, // honeypot
           ...utms,
-          // ✅ Optional extra tag; safe even if API ignores unknown fields
-          cohort: isTorontoCohort ? "toronto_launch" : null,
+
+          // ✅ keep cohort values consistent with API expectations
+          cohort: isTorontoCohort ? "toronto" : (cohortInfo.cohort ?? null),
         }),
       });
 
@@ -155,9 +150,9 @@ export default function WaitlistForm() {
         return;
       }
 
-      // ✅ Success copy aligned with Toronto launch + trial (not TestFlight)
+      // ✅ Success copy: do not promise a trial until revenue is live
       const successMsg = isTorontoCohort
-        ? "You’re in! Toronto early access is opening soon — we’ll email you when downloads go live (and you’ll get a 7-day Shifted+ trial)."
+        ? "You’re in! Toronto early access is opening soon — we’ll email you when downloads go live."
         : "You’re on the list! We’ll email you when early access opens in your area.";
 
       if (data?.already) {
@@ -168,7 +163,6 @@ export default function WaitlistForm() {
       setStatus({ ok: true, msg: successMsg });
 
       setEmail("");
-      // keep city if Toronto cohort so users don’t accidentally change it
       if (!isTorontoCohort) setCity("");
     } catch {
       setStatus({ ok: false, msg: "Network error. Please try again." });
@@ -221,18 +215,11 @@ export default function WaitlistForm() {
           }}
         />
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 10,
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <select
             value={city}
             onChange={(e) => setCity(e.target.value)}
-            disabled={loading || isTorontoCohort} // ✅ lock Toronto during Toronto cohort
-            required={isTorontoCohort} // ✅ require in Toronto cohort
+            disabled={loading || isTorontoCohort}
             style={{
               width: "100%",
               padding: "12px 14px",
@@ -244,9 +231,7 @@ export default function WaitlistForm() {
               opacity: loading ? 0.85 : 1,
             }}
           >
-            <option value="">
-              {isTorontoCohort ? "Toronto" : "City (optional)"}
-            </option>
+            {!isTorontoCohort && <option value="">City (optional)</option>}
             {CITIES.map((c) => (
               <option key={c} value={c}>
                 {c}
