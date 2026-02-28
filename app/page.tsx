@@ -1,7 +1,15 @@
 import WaitlistForm from "./components/WaitlistForm";
 
+function readQuery() {
+  // Server component: we can't read window here.
+  // But Next App Router lets us read searchParams in props. We're not using that pattern yet.
+  // So we keep the page copy general-but-Toronto-forward and let the form lock Toronto via query.
+  return null;
+}
+
 export default function Page() {
   const year = new Date().getFullYear();
+  readQuery();
 
   return (
     <main
@@ -24,42 +32,49 @@ export default function Page() {
             boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
           }}
         >
-          {/* Logo */}
+          {/* Logo (centered) */}
           <div style={{ display: "flex", justifyContent: "center" }}>
             <img
               src="/logo.png"
               alt="Shifted"
-              width={170}
-              style={{ display: "block" }}
+              width={190}
+              style={{
+                display: "block",
+                height: "auto",
+              }}
             />
           </div>
 
           {/* Headline */}
           <h1
             style={{
-              margin: "16px 0 8px",
-              fontSize: 26,
+              margin: "14px 0 6px",
+              fontSize: 24,
               fontWeight: 900,
               color: "#ffffff",
+              textAlign: "center",
+              letterSpacing: -0.2,
             }}
           >
-            Shifted Dating
+            Toronto Early Access
           </h1>
 
+          {/* Subheadline */}
           <p
             style={{
               margin: 0,
               color: "#9ca3af",
               fontSize: 15,
               lineHeight: 1.6,
+              textAlign: "center",
             }}
           >
-            Meet people on your schedule — no spam, no stress.
+            A dating app built for shift workers — launching in Toronto next week.
           </p>
 
           <div style={{ height: 1, background: "#111827", margin: "18px 0" }} />
 
-          {/* Waitlist */}
+          {/* Primary pitch */}
           <p
             style={{
               margin: "0 0 10px 0",
@@ -68,10 +83,16 @@ export default function Page() {
               lineHeight: 1.6,
             }}
           >
-            Join the waitlist for <span style={{ color: "#ffffff", fontWeight: 800 }}>early iOS access</span>{" "}
-            (TestFlight). We’ll email you an invite as spots open.
+            Join the first{" "}
+            <span style={{ color: "#ffffff", fontWeight: 900 }}>300</span>{" "}
+            Toronto members and get a{" "}
+            <span style={{ color: "#ffffff", fontWeight: 900 }}>
+              7-day Shifted+ trial
+            </span>{" "}
+            at launch.
           </p>
 
+          {/* What to expect box */}
           <div
             style={{
               marginBottom: 10,
@@ -84,26 +105,39 @@ export default function Page() {
               lineHeight: 1.5,
             }}
           >
-            <div style={{ color: "#ffffff", fontWeight: 800, marginBottom: 4 }}>
+            <div style={{ color: "#ffffff", fontWeight: 900, marginBottom: 4 }}>
               What to expect
             </div>
-            <div>• iPhone testers first (Android later).</div>
-            <div>• You’ll install via the TestFlight app (free from Apple).</div>
-            <div>• We’ll ask for quick feedback on messaging, matches, and notifications.</div>
+            <div>• Built for nights, days, and rotating schedules.</div>
+            <div>• Toronto-first so matches don’t feel empty.</div>
+            <div>
+              • If your browser blocks auto opening, use the{" "}
+              <span style={{ color: "#ffffff", fontWeight: 800 }}>
+                Open Shifted
+              </span>{" "}
+              button when prompted.
+            </div>
           </div>
 
           <WaitlistForm />
 
           <div style={{ height: 1, background: "#111827", margin: "18px 0" }} />
 
-          {/* Support */}
-          <p style={{ margin: 0, color: "#9ca3af", fontSize: 13, lineHeight: 1.6 }}>
+          {/* Small footnote (optional) */}
+          <p
+            style={{
+              margin: 0,
+              color: "#9ca3af",
+              fontSize: 13,
+              lineHeight: 1.6,
+            }}
+          >
             Need help?{" "}
             <a
               href="mailto:support@shifteddating.com"
               style={{
                 color: "#00ff88",
-                fontWeight: 800,
+                fontWeight: 900,
                 textDecoration: "none",
               }}
             >

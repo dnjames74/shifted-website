@@ -37,6 +37,32 @@ function readUtmParams(): Partial<Record<UtmKey, string>> {
   return out;
 }
 
+function readCohort(): { cohort: string | null; cityHint: string | null } {
+  if (typeof window === "undefined") return { cohort: null, cityHint: null };
+  const params = new URLSearchParams(window.location.search);
+
+  const cohort = (params.get("cohort") || "").trim().toLowerCase() || null;
+
+  // Allow /?city=toronto or /?city=Toronto
+  const rawCity = (params.get("city") || "").trim();
+  const cityHint = rawCity ? rawCity : null;
+
+  return { cohort, cityHint };
+}
+
+function normalizeCity(input: string | null): string | "" {
+  if (!input) return "";
+  const s = input.trim().toLowerCase();
+  if (s === "toronto" || s === "gta") return "Toronto";
+  if (s === "vancouver") return "Vancouver";
+  if (s === "calgary") return "Calgary";
+  if (s === "edmonton") return "Edmonton";
+  if (s === "montreal" || s === "montréal") return "Montreal";
+  if (s === "ottawa") return "Ottawa";
+  if (s === "other") return "Other";
+  return "";
+}
+
 export default function WaitlistForm() {
   const [email, setEmail] = useState("");
   const [city, setCity] = useState("");
@@ -53,6 +79,14 @@ export default function WaitlistForm() {
   );
 
   const utms = useMemo(() => readUtmParams(), []);
+  const cohortInfo = useMemo(() => readCohort(), []);
+
+  // ✅ Toronto seeding mode if URL contains ?cohort=toronto or ?city=toronto
+  const isTorontoCohort = useMemo(() => {
+    const c = cohortInfo.cohort;
+    const cityFromQuery = normalizeCity(cohortInfo.cityHint);
+    return c === "toronto" || cityFromQuery === "Toronto";
+  }, [cohortInfo]);
 
   useEffect(() => {
     // document.referrer is empty on direct visits; that’s fine.
@@ -62,14 +96,35 @@ export default function WaitlistForm() {
     }
   }, []);
 
+  useEffect(() => {
+    // ✅ Auto-select Toronto if we’re in Toronto cohort mode
+    if (typeof window === "undefined") return;
+
+    if (isTorontoCohort && !city) {
+      setCity("Toronto");
+      return;
+    }
+
+    // If user came with ?city=<something>, try to map it to our dropdown
+    if (!city) {
+      const normalized = normalizeCity(cohortInfo.cityHint);
+      if (normalized) setCity(normalized);
+    }
+  }, [isTorontoCohort, cohortInfo.cityHint, city]);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatus(null);
 
-    // Client-side guard (server still validates)
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes("@")) {
       setStatus({ ok: false, msg: "Enter a valid email." });
+      return;
+    }
+
+    // ✅ In Toronto cohort mode, require a city (and default to Toronto anyway)
+    if (isTorontoCohort && !city) {
+      setStatus({ ok: false, msg: "Please select Toronto to join early access." });
       return;
     }
 
@@ -83,10 +138,13 @@ export default function WaitlistForm() {
           email: cleanEmail,
           city: city || null,
           is_shift_worker: isShift,
-          source: "landing",
+          // ✅ Tagging for later filtering in Supabase (no schema change needed if this already exists)
+          source: isTorontoCohort ? "landing_toronto" : "landing",
           referrer,
           company, // honeypot
           ...utms,
+          // ✅ Optional extra tag; safe even if API ignores unknown fields
+          cohort: isTorontoCohort ? "toronto_launch" : null,
         }),
       });
 
@@ -97,23 +155,21 @@ export default function WaitlistForm() {
         return;
       }
 
-      // ✅ Updated success copy to match TestFlight rollout
+      // ✅ Success copy aligned with Toronto launch + trial (not TestFlight)
+      const successMsg = isTorontoCohort
+        ? "You’re in! Toronto early access is opening soon — we’ll email you when downloads go live (and you’ll get a 7-day Shifted+ trial)."
+        : "You’re on the list! We’ll email you when early access opens in your area.";
+
       if (data?.already) {
-        setStatus({
-          ok: true,
-          msg: "You’re already on the list — we’ll email you a TestFlight invite as soon as a spot opens.",
-        });
+        setStatus({ ok: true, msg: "You’re already on the list — " + successMsg });
         return;
       }
 
-      setStatus({
-        ok: true,
-        msg: "You're on the list! We’ll email you a TestFlight invite as soon as a spot opens.",
-      });
+      setStatus({ ok: true, msg: successMsg });
 
       setEmail("");
-      setCity("");
-      // keep isShift as-is (your call)
+      // keep city if Toronto cohort so users don’t accidentally change it
+      if (!isTorontoCohort) setCity("");
     } catch {
       setStatus({ ok: false, msg: "Network error. Please try again." });
     } finally {
@@ -165,11 +221,18 @@ export default function WaitlistForm() {
           }}
         />
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 10,
+          }}
+        >
           <select
             value={city}
             onChange={(e) => setCity(e.target.value)}
-            disabled={loading}
+            disabled={loading || isTorontoCohort} // ✅ lock Toronto during Toronto cohort
+            required={isTorontoCohort} // ✅ require in Toronto cohort
             style={{
               width: "100%",
               padding: "12px 14px",
@@ -181,7 +244,9 @@ export default function WaitlistForm() {
               opacity: loading ? 0.85 : 1,
             }}
           >
-            <option value="">City (optional)</option>
+            <option value="">
+              {isTorontoCohort ? "Toronto" : "City (optional)"}
+            </option>
             {CITIES.map((c) => (
               <option key={c} value={c}>
                 {c}
@@ -203,7 +268,7 @@ export default function WaitlistForm() {
               opacity: loading ? 0.85 : 1,
             }}
           >
-            {loading ? "Joining..." : "Join the waitlist"}
+            {loading ? "Joining..." : "Join early access"}
           </button>
         </div>
 
