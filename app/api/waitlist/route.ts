@@ -88,7 +88,7 @@ function getWaitlistEmailHtml(opts: { already: boolean }) {
   <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background:#05070A; padding:24px;">
     <div style="max-width:520px; margin:0 auto; background:#0b1620; border:1px solid #1f2937; border-radius:16px; padding:22px;">
       <div style="display:flex; justify-content:center; margin-bottom:14px;">
-        <img src="https://www.shifteddating.com/email-logo.png" alt="Shifted" width="180" style="display:block; height:auto; border:0; outline:none; text-decoration:none;" />
+        <img src="https://www.shifteddating.com/email-logo.jpg" alt="Shifted" width="180" style="display:block; height:auto; border:0; outline:none; text-decoration:none;" />
       </div>
 
       <h1 style="margin:0 0 10px 0; font-size:22px; color:#ffffff; font-weight:900; text-align:center;">
